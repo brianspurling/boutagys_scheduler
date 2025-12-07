@@ -9,25 +9,21 @@
 ## 1. Executive Summary
 
 ### Problem Statement
-The van rental business currently manages driver scheduling manually using spreadsheets. With 20 drivers completing ~100 jobs daily, the manual process is time-consuming and suboptimal, leading to:
-- High public transport costs due to poor job sequencing
-- Inefficient use of driver time (excessive travel between jobs)
-- Missed opportunities for job chaining and early delivery optimization
-- Difficulty adapting to daily changes (new orders, cancellations, time changes)
-- Inability to plan efficiently across multiple days
+The van rental business currently manages driver scheduling manually using spreadsheets. With 20 drivers completing ~100 jobs daily, the manual process is extremely time-consuming and possibly sub-optimal schedules.
 
 ### Proposed Solution
 An automated scheduling system that optimizes driver assignments and job sequencing to minimize costs while respecting all business constraints. The system will:
 - Plan 4 days ahead with rolling updates
-- Maximize job chaining to reduce public transport costs
-- Optimize for fuel efficiency, public transport costs, and overnight stays
+- Maximize job chaining to keep complete as many jobs as possible
+- Optimize for job completion rate, fuel efficiency, public transport costs, and overnight stays
 - Handle driver skills/certifications and working hour limits
 - Allow human oversight and manual overrides
 - Start with CSV/Google Sheets integration, with pathway to full API integration
 
 ### Expected Benefits
-- **Cost Reduction:** 20-40% reduction in public transport and overnight accommodation costs
-- **Time Savings:** [ESTIMATE: X hours/week] saved on manual scheduling
+- **Cost Reduction:** [ESTIMATE: X%] reduction in fuel, public transport and overnight accommodation costs
+- **Manager Time Savings:** [ESTIMATE: X hours/week] saved on manual scheduling
+- **Driver Efficiency Imprvoement:** [ESTIMATE: X%] increase in jobs completed 
 - **Flexibility:** Rapid re-optimization when jobs change
 - **Scalability:** System can grow with business
 - **Insights:** Data-driven understanding of scheduling patterns and costs
@@ -37,40 +33,70 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 ## 2. Business Context
 
 ### Current Operations
-- **Fleet Size:** [TO CONFIRM]
+- **Fleet Size:** [TO CONFIRM: X vans, Y trucks, etc]
 - **Driver Count:** 20 drivers
-- **Daily Job Volume:** ~100 jobs/day (5 per driver average)
+- **Daily Job Volume:** ~100 jobs/day (roughly 5 per driver)
 - **Planning Horizon:** 4 days ahead
 - **Current Process:** Manual spreadsheet-based assignment
 
-### Job Types
-1. **Collection Jobs:**
-   - Driver travels from home/office/overnight location to van location (via public transport)
-   - Driver collects van and drives to:
-     - Company storage location, OR
-     - Delivery location (chained with delivery job)
+### An Example 36 hours in the Life of a Driver
 
-2. **Delivery Jobs:**
-   - Driver has van from previous collection/delivery
-   - Driver delivers van to customer location
-   - Driver travels to next location (via public transport):
-     - Home/office, OR
-     - Next collection location (chained job), OR
-     - Overnight accommodation (if multiple days)
+- The driver wakes at home in the London suburbs
+- They don't already have a vehicle with them, so they check their schedule and hop on public transport to their first collection - from a nearby customer
+- They get the keys from the customer and drive the van to another customer, also nearby, who's rental starts today. It's not too dirty, so the driver gives it a quick hoover at a gas station and arrives at the customer's location 10 minutes before the booked delivery time
+- Then they're back on public transport and heading to one of the company storage locations to pick up another vehicle
+- They get the keys from the staff member at the storage location and drive the van all the way up to a customer in Edinburgh
+- (This delivery is a few days early, but there's a vehicle in Newcastle due to be picked up that's needed back in London tomorrow, so rather than sending a driver up to get it on public transport, it's great to get this delivery job done at the same time)
+- With that delivery done, they jump on public transport, head down to Newcastle, and collect the next van
+- It's the end of their day now, so they check into overnight accommodation
+- The next day, they're back in their collected van and bringing it back down to London. It's filthy, so they go via a car wash then drop the van straight to the next customer
+- They have time for one more job, which is a nearby collection (public transport to get there). This van isn't needed for a few days, so they take it to a storage location (where it can be cleaned by staff), then head home by public transport
+
+### The Structure of Job
+
+Basics:
+- A **job** is one of two **job types**: a **delivery** job or a **collection** job
+- Each job moves a single **vehicle** between either of two location types: **customer locations** and **storage locations**
+- Jobs can include an **overnight break**, either at the driver's house or at overnight accommodation
+- Each job is comprised of up to two journey **stages**:
+  - Stage 1: the driver's travel *to* the vehicle 
+  - Stage 2: the driver's travel *in* the vehicle
+
+Job Chaining:
+- Jobs can be **chained** together in six different **chain types**:
+  - Collection -> Delivery: A vehicle is *collected* from one customer location (job A), then the driver *delivers* the same vehicle to another customer location (job B)
+  - Delivery -> Collection: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to another customer locationto *collect* a second vehicle (job B)
+  - Delivery -> Delivery: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to a storage location to pick up a second vhiecle to *deliver* to another customer location (job B)
+  - Collection -> Collection: A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another customer location to *collect* a second vehicle
+  - Collection (to storage) -> Delivery (from same storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver picks up a second vehicle to *deliver* to another customer locaion (job B)
+  - Collection (to storage) -> Delivery (from different storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another storage location to pick up a second vehicle to *deliver* to another customer locaion (job B)
+
+The Effect of Chaining on Job Stages
+- Which of the two stages a job contains depends on the job type and how it has been chained together
+- Collection jobs always require stage 1 (travel *to* the vehicle) and delivery jobs always require stage 2 (travel *in* the vehicle)
+- A *Collection -> Delivery* chain is optimal as it requires neither of the other two stages (because at the end of collection stage 1 the driver is already at the vehicle ready to start delivery stage 2)
+- A *Collection (to storage) -> Delivery (from same storage)* chain does not require delivery stage 1 (because at the end of collection stage 2 the driver is already at the same storage location as the second vehicle)
+- For reference, here is a complete description of the job stages for each of the chain types:
+   - Collection -> Delivery: Collection job, stage 1 -> delivery job, stage 2
+   - Delivery -> Collection: Delivery job, stage 1 -> delivery job, stage 2 -> collection job, stage 1 -> collection job, stage 2
+   - Delivery -> Delivery: Delivery job, stage 1 -> delivery job, stage 2 -> delivery job, stage 1 -> delivery job, stage 2
+   - Collection -> Collection: Collection job, stage 1 -> collection job, stage 2 -> collection job, stage 1 -> collection job, stage 2
+   - Collection (to storage) -> Delivery (from same storage): Collection job, stage 1 -> collection job, stage 2 -> delivery job, stage 2
+   - Collection (to storage) -> Delivery (from different storage): Collection job, stage 1 -> collection job, stage 2 -> delivery job, stage 1 -> delivery job, stage 2
 
 ### Key Constraints
-- **Driver Certifications:** Some vehicles (trucks) require specific certifications
-- **Working Hours:** Maximum hours per driver per day [TO SPECIFY PER DRIVER]
-- **Time Windows:** Each job has a deadline - van must be delivered at or before specified time
+- **Driver Certifications:** Some vehicles (trucks) require specific certifications [TO SPECIFY PER DRIVER, IN DRIVER CSV]
+- **Working Hours:** Maximum hours per driver per day [TO SPECIFY PER DRIVER, IN DRIVER CSV]
+- **Time Windows:** Each job has a deadline - vehicle must be delivered at or before specified time
 - **Driver Availability:** Some drivers unavailable on certain dates
-- **Overnight Capability:** Only some drivers can do overnight stays [TO SPECIFY WHICH]
+- **Overnight Capability:** Only some drivers can do overnight stays [TO SPECIFY PER DRIVER, IN DRIVER CSV]
 
 ### Optimization Goals (Priority Order)
 1. **Maximize job chaining:** Reduce public transport legs between jobs
 2. **Minimize public transport costs:** Sequence jobs to minimize transit expenses
-3. **Minimize fuel costs:** Reduce total van driving distance
+3. **Minimize fuel costs:** Reduce total vehicle driving distance
 4. **Minimize overnight stays:** Only use when cost-effective for multi-day planning
-5. **Utilize early delivery:** Deliver vans early when parking permits and improves chaining
+5. **Utilize early delivery:** Deliver vehicles early when parking permits and improves chaining
 
 ---
 
@@ -153,15 +179,15 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 #### Jobs CSV
 ```csv
 job_id,date,time,job_type,vehicle_reg,vehicle_group,postcode,notes
-J001,2025-12-07,09:00,collection,AB12XYZ,van,SW1A1AA,Customer pickup at 10am
-J002,2025-12-07,14:30,delivery,AB12XYZ,van,SE17QA,
+J001,2025-12-07,09:00,collection,AB12XYZ,vehicle,SW1A1AA,Customer pickup at 10am
+J002,2025-12-07,14:30,delivery,AB12XYZ,vehicle,SE17QA,
 J003,2025-12-08,08:00,collection,CD34EFG,truck,M11AE,Requires HGV license
 ```
 
 **Fields:**
 - `job_id`: Unique identifier
 - `date`: Delivery/collection deadline date
-- `time`: Delivery/collection deadline time (van must arrive by this time)
+- `time`: Delivery/collection deadline time (vehicle must arrive by this time)
 - `job_type`: "collection" or "delivery"
 - `vehicle_reg`: Vehicle registration
 - `vehicle_group`: van, truck, [OTHER TYPES TO SPECIFY]
