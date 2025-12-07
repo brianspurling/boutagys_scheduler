@@ -54,7 +54,6 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 
 ### The Structure of Job
 
-Basics:
 - A **job** is one of two **job types**: a **delivery** job or a **collection** job
 - Each job moves a single **vehicle** between either of two location types: **customer locations** and **storage locations**
 - Jobs can include an **overnight break**, either at the driver's house or at overnight accommodation
@@ -62,16 +61,19 @@ Basics:
   - Stage 1: the driver's travel *to* the vehicle 
   - Stage 2: the driver's travel *in* the vehicle
 
-Job Chaining:
-- Jobs can be **chained** together in six different **chain types**:
-  - Collection -> Delivery: A vehicle is *collected* from one customer location (job A), then the driver *delivers* the same vehicle to another customer location (job B)
-  - Delivery -> Collection: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to another customer locationto *collect* a second vehicle (job B)
-  - Delivery -> Delivery: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to a storage location to pick up a second vhiecle to *deliver* to another customer location (job B)
-  - Collection -> Collection: A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another customer location to *collect* a second vehicle
-  - Collection (to storage) -> Delivery (from same storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver picks up a second vehicle to *deliver* to another customer locaion (job B)
-  - Collection (to storage) -> Delivery (from different storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another storage location to pick up a second vehicle to *deliver* to another customer locaion (job B)
+### Job Chaining
 
-The Effect of Chaining on Job Stages
+Jobs can be **chained** together in six different **chain types**:
+
+- Collection -> Delivery: A vehicle is *collected* from one customer location (job A), then the driver *delivers* the same vehicle to another customer location (job B)
+- Delivery -> Collection: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to another customer locationto *collect* a second vehicle (job B)
+- Delivery -> Delivery: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to a storage location to pick up a second vhiecle to *deliver* to another customer location (job B)
+- Collection -> Collection: A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another customer location to *collect* a second vehicle
+- Collection (to storage) -> Delivery (from same storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver picks up a second vehicle to *deliver* to another customer locaion (job B)
+- Collection (to storage) -> Delivery (from different storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another storage location to pick up a second vehicle to *deliver* to another customer locaion (job B)
+
+The Effect of Chaining on Job Stages: 
+
 - Which of the two stages a job contains depends on the job type and how it has been chained together
 - Collection jobs always require stage 1 (travel *to* the vehicle) and delivery jobs always require stage 2 (travel *in* the vehicle)
 - A *Collection -> Delivery* chain is optimal as it requires neither of the other two stages (because at the end of collection stage 1 the driver is already at the vehicle ready to start delivery stage 2)
@@ -105,12 +107,11 @@ The Effect of Chaining on Job Stages
 ### System Components
 
 ```
-┌──────────────────────────────────────────────┐
-│         INPUT LAYER                          │
-│  - CSV Upload (Jobs, Drivers, Offices)       │
-│  - Google Sheets Integration (Phase 1)       │
-│  - API Integration (Future Phase)            │
-└──────────────┬───────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│         INPUT LAYER                                            │
+│  - Core Data CSV Upload (Drivers, Storage Locations)           │
+│  - Jobs Upload (Phase 1: CSV Integration, Future Phase: API)   │
+└──────────────┬─────────────────────────────────────────────────┘
                │
                ↓
 ┌──────────────────────────────────────────────┐
@@ -166,22 +167,56 @@ The Effect of Chaining on Job Stages
 - **Optimization:** Google OR-Tools (open-source constraint programming)
 - **APIs:** Google Maps Platform (Directions + Distance Matrix)
 - **Data Processing:** pandas, numpy
-- **AI Layer:** LLM API (Claude/OpenAI) for natural language interface
+- **AI Layer:** LLM API (Claude) for natural language interface
 - **Initial Deployment:** [TO DECIDE: Local server vs Cloud (AWS/GCP/Azure)]
-- **Future Integration:** REST API for booking system integration
+- **Future Integration:** TBD
 
 ---
 
 ## 4. Data Requirements
 
+### Core Data Formats
+
+#### Drivers CSV [TO BE CONFIRMED BY ED]
+```csv
+driver_id,name,home_postcode,max_hours_per_day,certifications,can_overnight,unavailable_dates,home_location
+D001,John Smith,SE17QA,10,van;truck,yes,,51.443232/-0.221951
+D002,Jane Doe,N11AA,8,van,no,2025-12-10;2025-12-11,51.36992/-0.18408
+
+```
+
+**Fields:**
+- `driver_id`: Unique identifier
+- `name`: Driver name
+- `home_postcode`: Home address postcode
+- `max_hours_per_day`: Maximum working hours
+- `certifications`: Semicolon-separated list of vehicle types driver can handle
+- `can_overnight`: yes/no - can driver do overnight stays
+- `unavailable_dates`: Semicolon-separated list of dates (YYYY-MM-DD)
+- `home_location`: lat/long
+
+#### Storage Locations CSV [TO BE CONFIRMED BY ED]
+```csv
+location_id,name,postcode,restricted_vehicle_groups
+O001,London HQ,EC1A1BB,trucks
+O002,Manchester Office,M11AE,
+S001,London Storage,NW10 6RS,
+```
+
+**Fields:**
+- `office_id`: Unique identifier
+- `name`: Location name
+- `postcode`: UK postcode
+- `restricted_vehicle_groups`: a semicolon-separated list of vechicle types that the storage location cannot take
+
 ### Input Data Formats
 
-#### Jobs CSV
+#### Jobs CSV [EXAMPLE DATA TO BE PROVIDED BY ED]
 ```csv
-job_id,date,time,job_type,vehicle_reg,vehicle_group,postcode,notes
-J001,2025-12-07,09:00,collection,AB12XYZ,vehicle,SW1A1AA,Customer pickup at 10am
-J002,2025-12-07,14:30,delivery,AB12XYZ,vehicle,SE17QA,
-J003,2025-12-08,08:00,collection,CD34EFG,truck,M11AE,Requires HGV license
+job_id,date,time,job_type,vehicle_reg,vehicle_group,collection_location,delivery_location,notes
+J001,2025-12-07,09:00,collection,AB12XYZ,LWB van,SW1A1AA,,Customer pickup at 10am
+J002,2025-12-07,14:30,delivery,AB12XYZ,SWB van,EC1A7AJ,SE17QA,
+J003,2025-12-08,08:00,collection,CD34EFG,truck,B11TB,,Requires HGV license
 ```
 
 **Fields:**
@@ -194,36 +229,7 @@ J003,2025-12-08,08:00,collection,CD34EFG,truck,M11AE,Requires HGV license
 - `postcode`: UK postcode for job location
 - `notes`: Optional human-readable notes
 
-#### Drivers CSV
-```csv
-driver_id,name,home_postcode,max_hours_per_day,certifications,can_overnight,unavailable_dates,base_office
-D001,John Smith,SE17QA,10,van;truck,yes,,O001
-D002,Jane Doe,N11AA,8,van,no,2025-12-10;2025-12-11,O002
-```
 
-**Fields:**
-- `driver_id`: Unique identifier
-- `name`: Driver name
-- `home_postcode`: Home address postcode
-- `max_hours_per_day`: Maximum working hours
-- `certifications`: Semicolon-separated list of vehicle types driver can handle
-- `can_overnight`: yes/no - can driver do overnight stays
-- `unavailable_dates`: Semicolon-separated list of dates (YYYY-MM-DD)
-- `base_office`: Which office driver typically starts from [TO CONFIRM IF NEEDED]
-
-#### Offices/Storage Locations CSV
-```csv
-office_id,name,postcode,type
-O001,London HQ,EC1A1BB,office
-O002,Manchester Office,M11AE,office
-S001,London Storage,NW10 6RS,storage
-```
-
-**Fields:**
-- `office_id`: Unique identifier
-- `name`: Location name
-- `postcode`: UK postcode
-- `type`: office or storage
 
 ### Output Data Format
 
@@ -292,7 +298,7 @@ Total Cost =
   + Σ (Van Distance × £0.50/mile)    [Fuel cost - TO CONFIRM RATE]
   + Σ (Overnight Stays × £65)        [Fixed accommodation cost]
   + Penalties for constraint violations
-  - Bonus for efficient job chains   [Reward 3+ consecutive jobs]
+  - Bonus for efficient job chains   [Rewards chained jobs, especially: the further away they are from London and for collection -> delivery chains]
 ```
 
 ### Job Chaining Logic
@@ -307,22 +313,21 @@ Driver starts: Home/Office
   → Drive to Delivery 2
   → PT to Collection 3
   → Drive to Delivery 3
-  → PT to Home/Office/Overnight
+  → PT to Home/Overnight
 
 Total: 3 jobs, 4 PT legs
 ```
 
 **Benefits of chaining:**
 - Reduces PT legs (one driver does multiple jobs vs. multiple drivers doing one each)
-- Keeps drivers in geographic regions with good PT links
+- Keeps drivers in a geographic region well connected by PT
 - Maximizes productive driving time vs. transit time
 
 ### Early Delivery Decisions
 Jobs can be delivered before deadline if:
-1. **Parking is suitable:** Not city center/difficult parking area
+1. **Parking is suitable:** I.e. be careful of city centers / difficult parking area
 2. **Improves chaining:** Creates better job sequence for current or next day
 3. **Reduces costs:** Overall cost decreased by early delivery
-4. **Customer allows it:** [TO CONFIRM - do we need customer approval flag?]
 
 **Parking assessment heuristic:**
 - City center postcodes (SW1, EC1, WC1, M1, etc.) = difficult parking = avoid early delivery
@@ -332,26 +337,11 @@ Jobs can be delivered before deadline if:
 ### Overnight Stay Logic
 Driver stays overnight away from home if:
 1. **Multi-day benefit:** Sets up good job chains next day
-2. **Cost effective:** Overnight cost (£65) < savings in PT costs
+2. **Cost effective:** Overnight cost (£65) < savings in PT costs and time costs
 3. **Driver capable:** Driver flagged as can_overnight=yes
 4. **Good PT location:** Overnight location near train station/good transit links
 
 ---
-
-## 7. Cost Estimates
-
-### Development Costs
-**Option A: Internal Development**
-- Senior Python Developer: [ESTIMATE: £X/day × Y days = £Z]
-- Total estimated development time: [TO ESTIMATE based on phases]
-
-**Option B: Contract Development**
-- Fixed price for MVP (Phase 1-2): [TO OBTAIN QUOTES]
-
-**Option C: Hybrid (Claude Code assisted)**
-- Accelerated development using AI assistance
-- Estimated time reduction: 30-50%
-- [TO ESTIMATE based on developer availability]
 
 ### Monthly Operating Costs
 
@@ -373,7 +363,7 @@ Driver stays overnight away from home if:
    - Estimated: 500 × 30 days = 15,000 requests/month = **$150/month**
 
 3. **Caching benefit:**
-   - Many route pairs repeat (home locations, offices, common job areas)
+   - Many route pairs repeat (home locations, storage locations, common job areas)
    - Cache hit rate estimated: 40-60%
    - **Actual cost with caching: $85-125/month**
 
@@ -397,33 +387,11 @@ Driver stays overnight away from home if:
 - **Total: $25-60/month**
 
 **Option B: Local Server**
-- One-time hardware cost: £500-1,000
-- Electricity: ~£10/month
-- **Ongoing: ~£10/month**
+- **Ongoing: ~£0/month**
 
 #### Database/Storage
-- CSV-based (Phase 1): Minimal cost (~$5/month cloud storage)
+- CSV-based (Phase 1): £0
 - Future database (Phase 4): $20-50/month
-
-### Total Monthly Operating Costs
-| Component | Cost (£/month) |
-|-----------|----------------|
-| Google Maps API | £90-100 |
-| LLM API | £8-15 |
-| Hosting | £20-50 |
-| Storage | £5-10 |
-| **TOTAL** | **£125-175/month** |
-
-### Break-Even Analysis
-**Current estimated costs (manual process):**
-- Suboptimal scheduling cost: [TO ESTIMATE - excess PT costs, wasted time]
-- Manager time spent scheduling: [X hours/week × £Y/hour]
-
-**Estimated savings:**
-- PT cost reduction (20-30%): [TO CALCULATE based on current spend]
-- Time savings: [X hours/week × £Y/hour]
-
-**Payback period:** [TO CALCULATE once current costs known]
 
 ---
 
@@ -446,12 +414,10 @@ Driver stays overnight away from home if:
    - [ ] Certification requirements for each type
 
 4. **Early delivery:**
-   - [ ] Does customer need to approve early delivery, or can we deliver anytime before deadline?
    - [ ] List of postcodes/areas with difficult parking
 
 5. **Storage locations:**
    - [ ] How many storage locations?
-   - [ ] Should optimizer prefer delivering to storage vs customer? (Or customer-determined?)
 
 6. **Time windows:**
    - [ ] What % of jobs are "exact time" vs "flexible window"?
@@ -470,15 +436,10 @@ Driver stays overnight away from home if:
    - [ ] Command-line tool acceptable initially, or need web dashboard?
    - [ ] Who will be primary users of the system?
 
-4. **Integration timeline:**
-   - [ ] What booking system is used currently?
-   - [ ] Timeline for Phase 4 API integration?
-
 ### Optimization Parameters
 1. **Cost rates:**
    - [ ] Fuel cost per mile (currently estimated £0.50)
    - [ ] Value of driver time per hour (currently estimated £20)
-   - [ ] Overnight accommodation (confirmed £65 - any variation by location?)
 
 2. **Optimization preferences:**
    - [ ] Max acceptable overnight stays per week per driver?
@@ -490,152 +451,26 @@ Driver stays overnight away from home if:
 ## 9. Success Metrics
 
 ### Primary KPIs
-1. **Cost Reduction:**
+
+1. **Management Effort Reduction**
+   - Time spent scheduling (target: 80% reduction in manual effort)
+   - Time spent re-scheduling when jobs change
+  
+2. **Cost Reduction:**
    - PT cost per job (target: 20-30% reduction)
    - Total weekly PT spend
    - Overnight accommodation costs
    - Fuel costs
 
-2. **Efficiency Metrics:**
+3. **Efficiency Metrics:**
    - Average jobs per driver per day (target: maintain or increase current 5)
    - Average job chain length (target: 3+ consecutive jobs)
    - PT legs per driver per day (target: minimize)
-   - Time spent scheduling (target: 80% reduction in manual effort)
-
+   
 3. **Service Quality:**
    - % jobs completed on-time (target: 100%)
    - % jobs delivered early (measure benefit)
    - Driver satisfaction (reduced travel time/cost)
-
-### Secondary Metrics
-- Re-optimization frequency (how often schedules change)
-- System uptime/reliability
-- Time to re-optimize when jobs change
-- Accuracy of cost predictions vs actual
-
----
-
-## 10. Risks & Mitigations
-
-### Technical Risks
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Google Maps API costs higher than estimated | Medium | Implement aggressive caching; monitor usage; consider alternative APIs |
-| Optimization too slow for real-time updates | Medium | Use heuristics for large problems; pre-compute common scenarios |
-| Transit cost estimates inaccurate | High | Validate against historical data; manual override capability |
-| API rate limits/downtime | Medium | Cache results; fallback to estimated costs; queue requests |
-
-### Business Risks
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Staff resistance to automated system | Medium | Gradual rollout; maintain manual override capability; training |
-| Edge cases not handled by optimizer | Medium | Human review of all schedules initially; feedback loop for improvements |
-| Integration with existing systems difficult | Low | Start with CSV; phased integration approach |
-
----
-
-## 11. Implementation Timeline (Estimated)
-
-### Phase 1: MVP (Core Scheduling)
-**Duration:** [X weeks - TO ESTIMATE]
-- Week 1-2: Data models, CSV parsing, API integration
-- Week 3-4: Basic optimization algorithm
-- Week 5-6: Testing with real data, refinement
-
-**Deliverable:** Working single-day scheduler with CSV input/output
-
-### Phase 2: Advanced Features
-**Duration:** [X weeks - TO ESTIMATE]
-- Multi-day optimization
-- Job chaining logic
-- Early delivery and overnight stay logic
-- Google Sheets integration
-
-**Deliverable:** Production-ready 4-day rolling scheduler
-
-### Phase 3: AI Assistant
-**Duration:** [X weeks - TO ESTIMATE]
-- LLM integration
-- Natural language interface
-- Manual override handling
-- Web dashboard (optional)
-
-**Deliverable:** User-friendly system with AI assistance
-
-### Phase 4: Full Integration
-**Duration:** [X weeks - TO ESTIMATE]
-- REST API development
-- Booking system integration
-- Automated re-scheduling
-- Historical analysis
-
-**Deliverable:** Fully automated scheduling system
-
----
-
-## 12. Next Steps
-
-1. **Review this specification** with manager and stakeholders
-2. **Gather answers** to outstanding questions (Section 8)
-3. **Validate cost assumptions** with current operational data
-4. **Decide on implementation approach:**
-   - Internal development vs contract vs hybrid
-   - Phased rollout vs full build
-5. **Approve budget** for development and monthly operating costs
-6. **Set timeline** for Phase 1 delivery
-7. **Identify pilot users** for initial testing
-
----
-
-## Appendix A: Sample Scenarios
-
-### Scenario 1: Optimal Chain
-**Input:**
-- Job A: Collection in Croydon at 9am, delivery in Sutton
-- Job B: Collection in Sutton at 11am, delivery in Kingston
-- Job C: Collection in Kingston at 2pm, delivery in Richmond
-
-**Optimal Schedule:**
-- Driver starts from home (South London)
-- PT to Croydon (£5, 30min)
-- Drive to Sutton (6 miles)
-- Walk to Job B collection (in Sutton already - £0, 5min!) ← EXCELLENT CHAIN
-- Drive to Kingston (5 miles)
-- Walk to Job C collection (in Kingston - £0, 5min!) ← EXCELLENT CHAIN
-- Drive to Richmond (4 miles)
-- PT home (£6, 40min)
-
-**Total PT cost: £11, 3 jobs perfectly chained**
-
-### Scenario 2: Overnight Stay Decision
-**Day 1:**
-- Driver completes 4 jobs, last delivery in Manchester at 6pm
-- Driver home is in London
-
-**Options:**
-- Return to London: £45 train, 2.5 hours → Start in London next day
-- Stay overnight in Manchester: £65 hotel
-
-**Day 2 Jobs:**
-- 3 jobs in Manchester/Liverpool area available
-
-**Optimizer decision:** Stay overnight
-- **Cost:** £65 hotel vs £45 return + £45 next morning = £90
-- **Savings:** £25
-- **Time saved:** 5 hours
-- **Better job allocation:** Driver can do Manchester jobs next day
-
----
-
-## Appendix B: Glossary
-
-- **Job Chaining:** Sequencing jobs so delivery location of one job is near collection location of next job
-- **PT:** Public Transport
-- **Time Window:** Deadline by which job must be completed
-- **Early Delivery:** Delivering van before scheduled deadline
-- **Overnight Stay:** Driver accommodation away from home between job days
-- **VRP:** Vehicle Routing Problem (class of optimization problems)
-- **OR-Tools:** Google's open-source optimization library
 
 ---
 
