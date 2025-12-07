@@ -403,6 +403,21 @@ Driver stays overnight away from home if:
 
 ## 8. Outstanding Questions & Decisions Needed
 
+### Strategic Decision (CRITICAL - Informs All Other Decisions)
+
+**Primary Goal: Are we trying to:**
+- [ ] **Option A: Automate the current process** - Save manager time, maintain current schedule quality
+  - Focus: Time savings, reduce manual effort
+  - Acceptable approach: Pure LLM replicating human decision-making
+  - Expected outcome: Similar schedules to current, massive time savings
+
+- [ ] **Option B: Improve the current process** - Save time AND reduce operational costs through better optimization
+  - Focus: Time savings + cost reduction (estimated 15-30% operational savings)
+  - Recommended approach: Hybrid LLM + optimizer OR traditional optimizer
+  - Expected outcome: Better schedules than current, time savings + £5-10k/year cost reduction
+
+**This decision determines the technical approach, development timeline, and ROI calculation.**
+
 ### Business Requirements
 1. **Current costs:** What is current monthly spend on:
    - [ ] Driver public transport costs
