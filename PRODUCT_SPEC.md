@@ -92,6 +92,7 @@ The Effect of Chaining on Job Stages:
 - **Time Windows:** Each job has a deadline - vehicle must be delivered at or before specified time
 - **Driver Availability:** Some drivers unavailable on certain dates
 - **Overnight Capability:** Only some drivers can do overnight stays [TO SPECIFY PER DRIVER, IN DRIVER CSV]
+- **Customer Approval:** System must flag any jobs scheduled outside their specified time window (early deliveries or late collections) for manual customer approval before execution
 
 ### Optimization Goals (Priority Order)
 1. **Maximize job chaining:** Reduce public transport legs between jobs
@@ -235,13 +236,18 @@ J003,2025-12-08,08:00,collection,CD34EFG,truck,B11TB,,Requires HGV license
 
 #### Driver Schedule CSV
 ```csv
-driver_id,driver_name,date,seq,job_id,job_type,location_postcode,arrival_time,transport_mode,transport_cost,transport_time,notes
-D001,John Smith,2025-12-07,1,START,start,SE17QA,08:00,,,Starting from home
-D001,John Smith,2025-12-07,2,J001,collection,SW1A1AA,09:00,transit,12.50,45,Train from London Bridge
-D001,John Smith,2025-12-07,3,J002,delivery,SE17QA,10:30,drive,8.50,25,Driving van 15 miles
-D001,John Smith,2025-12-07,4,J005,collection,SE5 9RS,11:00,transit,3.20,15,Bus from SE17
-D001,John Smith,2025-12-07,5,END,end,SE17QA,17:00,transit,8.00,30,Return home
+driver_id,driver_name,date,seq,job_id,job_type,vehicle_reg,location_postcode,arrival_time,transport_mode,transport_cost,transport_time,customer_approval_required,notes
+D001,John Smith,2025-12-07,1,START,start,,SE17QA,08:00,,,,no,Starting from home
+D001,John Smith,2025-12-07,2,J001,collection,AB12XYZ,SW1A1AA,09:00,transit,12.50,45,no,Train from London Bridge
+D001,John Smith,2025-12-07,3,J002,delivery,AB12XYZ,SE17QA,10:30,drive,8.50,25,yes,EARLY DELIVERY - customer approval needed
+D001,John Smith,2025-12-07,4,J005,collection,CD34EFG,SE5 9RS,11:00,transit,3.20,15,no,Bus from SE17
+D001,John Smith,2025-12-07,5,END,end,,SE17QA,17:00,transit,8.00,30,no,Return home
 ```
+
+**Key fields:**
+- `vehicle_reg`: Vehicle registration (blank for START/END and public transport legs)
+- `customer_approval_required`: "yes" if job is scheduled outside specified time window (early delivery or late collection), "no" otherwise
+- This flag alerts staff to confirm with customer before executing the job
 
 **Additional Outputs:**
 - Cost summary per driver per day
@@ -413,15 +419,42 @@ Driver stays overnight away from home if:
    - [ ] Complete list of vehicle groups beyond "van" and "truck"
    - [ ] Certification requirements for each type
 
-4. **Early delivery:**
-   - [ ] List of postcodes/areas with difficult parking
+4. **Early delivery and late collection:**
+   - [ ] Customer approval process: How do staff confirm with customers when jobs are scheduled outside normal windows?
+   - [ ] List of postcodes/areas with difficult parking (to avoid early delivery)
+   - [ ] Any customers who explicitly allow/disallow schedule flexibility?
 
 5. **Storage locations:**
-   - [ ] How many storage locations?
+   - [ ] How many storage locations and their postcodes?
+   - [ ] Is there a default/preferred storage per region?
+   - [ ] Any capacity limits per storage location?
+   - [ ] Any handling time or cost when routing through storage?
 
 6. **Time windows:**
    - [ ] What % of jobs are "exact time" vs "flexible window"?
    - [ ] How is this indicated in current spreadsheet?
+   - [ ] For collection jobs: does 'time' mean "collect by this deadline" or "customer returns vehicle at this time"?
+   - [ ] Can collections be done early (before scheduled time) or only deliveries?
+
+7. **Job dependencies and incomplete chains:**
+   - [ ] If driver runs out of hours mid-chain (collected vehicle but can't deliver), can vehicle stay with them overnight?
+   - [ ] If driver can't do overnights, must all their jobs complete same-day?
+   - [ ] Can job sequences span multiple days with storage in between?
+   - [ ] Any explicit job dependencies beyond vehicle flow?
+
+8. **Multi-vehicle handling:**
+   - [ ] Can one driver handle multiple vehicles in one trip (e.g., drive one with another on trailer)?
+   - [ ] Or always one vehicle at a time per driver?
+
+9. **Customer handover:**
+   - [ ] Do drivers always meet customers for key handover?
+   - [ ] Or can keys be left in lockboxes/with concierge/staff?
+   - [ ] Does this affect timing (e.g., need buffer time for handover)?
+
+10. **Vehicle cleaning:**
+    - [ ] Is vehicle cleaning factored into job timing?
+    - [ ] Done by drivers (as in the example) or by storage staff?
+    - [ ] Does this affect which jobs can be chained?
 
 ### Technical Decisions
 1. **Hosting preference:**
