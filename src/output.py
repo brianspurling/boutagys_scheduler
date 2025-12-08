@@ -8,6 +8,7 @@ from datetime import datetime
 
 from models import Driver, Job, Assignment
 from llm_heuristics import JobCluster, JobPairSuggestion, DriverRegionAffinity
+from notes_parser import ParsedNote
 
 
 def write_llm_heuristics_output(
@@ -104,8 +105,35 @@ def write_llm_heuristics_output(
 
     print(f"  ├─ LLM Output: {affinity_file}")
 
-    # 4. Impossible Assignments (filtered out)
-    impossible_file = output_path / f'llm_04_impossible_assignments_{timestamp}.csv'
+    # 4. Parsed Notes (LLM analysis)
+    if heuristics_result.get('parsed_notes'):
+        notes_file = output_path / f'llm_04_parsed_notes_{timestamp}.csv'
+        with open(notes_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                'job_ref', 'urgency', 'constraints', 'vehicle_restrictions',
+                'special_instructions', 'warnings', 'location_hints',
+                'confidence', 'summary', 'original_note'
+            ])
+
+            for note in heuristics_result['parsed_notes']:
+                writer.writerow([
+                    note.job_ref,
+                    note.urgency,
+                    '; '.join(note.constraints),
+                    '; '.join(note.vehicle_restrictions),
+                    '; '.join(note.special_instructions),
+                    '; '.join(note.warnings),
+                    '; '.join(note.location_hints),
+                    note.confidence,
+                    note.summary,
+                    note.original_note
+                ])
+
+        print(f"  ├─ LLM Output: {notes_file}")
+
+    # 5. Impossible Assignments (filtered out)
+    impossible_file = output_path / f'llm_05_impossible_assignments_{timestamp}.csv'
     with open(impossible_file, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['job_ref', 'driver_id', 'reason'])

@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 
 from models import Driver, Job, Location, Vehicle, JobType, TransportMode
 from distance import DistanceCalculator
+from notes_parser import NotesParser, ParsedNote
 
 
 class JobCluster:
@@ -72,11 +73,23 @@ class LLMHeuristics:
     This represents the "LLM thinking" phase that happens before optimization.
     """
 
-    def __init__(self, distance_calc: DistanceCalculator):
+    def __init__(self, distance_calc: DistanceCalculator, use_llm_notes: bool = True):
         self.distance_calc = distance_calc
+        self.use_llm_notes = use_llm_notes
         self.clusters: List[JobCluster] = []
         self.job_pairs: List[JobPairSuggestion] = []
         self.driver_affinities: List[DriverRegionAffinity] = []
+        self.parsed_notes: List[ParsedNote] = []
+
+        # Initialize notes parser if enabled
+        self.notes_parser = None
+        if self.use_llm_notes:
+            try:
+                self.notes_parser = NotesParser()
+            except (ValueError, ImportError) as e:
+                print(f"  ⚠️  Could not initialize notes parser: {e}")
+                print(f"      Continuing without LLM notes parsing...")
+                self.use_llm_notes = False
 
     def analyze_jobs(
         self,
@@ -107,7 +120,14 @@ class LLMHeuristics:
         self.driver_affinities = self._calculate_driver_affinities(drivers, self.clusters)
         print(f"  │  └─ Calculated {len(self.driver_affinities)} affinity scores")
 
-        # Step 4: Pre-filter impossible assignments
+        # Step 4: Parse job notes with LLM (if enabled)
+        if self.use_llm_notes and self.notes_parser:
+            print("  ├─ Parsing job notes with Claude API...")
+            self.parsed_notes = self.notes_parser.parse_all_notes(jobs)
+        else:
+            print("  ├─ Skipping LLM notes parsing (disabled or unavailable)")
+
+        # Step 5: Pre-filter impossible assignments
         print("  └─ Pre-filtering impossible assignments...")
         impossible = self._identify_impossible_assignments(jobs, drivers, vehicles)
         print(f"     └─ Filtered out {len(impossible)} impossible job-driver pairs")
@@ -116,6 +136,7 @@ class LLMHeuristics:
             'clusters': self.clusters,
             'job_pairs': self.job_pairs,
             'driver_affinities': self.driver_affinities,
+            'parsed_notes': self.parsed_notes,
             'impossible_assignments': impossible
         }
 

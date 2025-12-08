@@ -1,5 +1,8 @@
 # Van Rental Driver Scheduler - Dependencies
 
+# LLM-based notes parsing
+anthropic>=0.40.0
+
 # For future OR-Tools integration
 # ortools>=9.7.0
 
