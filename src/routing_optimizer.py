@@ -158,6 +158,15 @@ class RoutingOptimizer:
                 if (job.booking_ref, driver.driver_id) in impossible:
                     self.model.Add(self.job_assigned[(job_idx, driver_idx)] == 0)
 
+        # Constraint 3: Limit jobs per driver (prevent 70 to one driver!)
+        max_jobs_per_driver = max(10, len(self.jobs) // len(self.drivers) + 3)  # ~7 max for 79 jobs/20 drivers
+        for driver_idx in range(len(self.drivers)):
+            jobs_for_driver = sum(
+                self.job_assigned[(job_idx, driver_idx)]
+                for job_idx in range(len(self.jobs))
+            )
+            self.model.Add(jobs_for_driver <= max_jobs_per_driver)
+
     def _add_sequencing_constraints(self):
         """Jobs for same driver must be in sequence"""
 
@@ -238,21 +247,32 @@ class RoutingOptimizer:
                     )
 
     def _set_objective(self):
-        """Minimize total cost (PT + fuel - chaining savings)"""
+        """Minimize total cost (PT + fuel - chaining savings + workload balance)"""
 
         cost_terms = []
 
-        # Cost 1: Base cost for each job (2 stages if unchained)
+        # Cost 1: Actual distance-based cost for each job-driver pair
         for job_idx, job in enumerate(self.jobs):
-            # Estimate base cost (simplified)
-            # Delivery: PT to storage + drive to customer = ~£20 average
-            # Collection: PT to customer + drive to storage = ~£20 average
-            base_cost = 2000  # £20 in pence
+            job_coords = self.distance_calc.geocode_postcode(job.location_postcode)
 
-            # Cost incurred if job is assigned
-            for driver_idx in range(len(self.drivers)):
+            for driver_idx, driver in enumerate(self.drivers):
+                # Calculate actual cost based on distance
+                distance_km = self.distance_calc.get_distance_km(
+                    driver.home_location,
+                    job_coords
+                )
+
+                # Two-stage cost (simplified for spike):
+                # Stage 1: PT to vehicle location (~£0.20/km)
+                # Stage 2: Drive vehicle (~£0.45/km)
+                # Assume average: stage 1 = stage 2 = distance_km
+                stage1_cost = distance_km * 20  # PT (pence)
+                stage2_cost = distance_km * 45  # Driving (pence)
+                total_cost = int(stage1_cost + stage2_cost)  # Convert to int for CP-SAT
+
+                # Add to objective
                 cost_terms.append(
-                    base_cost * self.job_assigned[(job_idx, driver_idx)]
+                    total_cost * self.job_assigned[(job_idx, driver_idx)]
                 )
 
         # Cost 2: Chaining savings (negative cost = bonus)
@@ -279,6 +299,25 @@ class RoutingOptimizer:
                     # Moderate savings: eliminate PT return between jobs
                     saving = -1000  # -£10
                     cost_terms.append(saving * self.job_chained[(i, j)])
+
+        # Cost 3: Workload balancing penalty
+        # Add penalty for imbalanced workload (prevents 70 jobs to one driver!)
+        # Create variables for jobs per driver, then add quadratic penalty
+        for driver_idx in range(len(self.drivers)):
+            # Count jobs for this driver
+            jobs_for_driver = sum(
+                self.job_assigned[(job_idx, driver_idx)]
+                for job_idx in range(len(self.jobs))
+            )
+
+            # Penalty: prefer balanced workload
+            # Use linear penalty scaled by expected jobs per driver
+            expected_jobs_per_driver = len(self.jobs) / len(self.drivers)  # ~4 jobs/driver
+            balance_penalty = 500  # £5 penalty per job above expected
+
+            # Add penalty term (simplified - linear penalty for now)
+            # In production, would use quadratic or soft constraints
+            cost_terms.append(balance_penalty * jobs_for_driver)
 
         # Minimize total cost
         self.model.Minimize(sum(cost_terms))

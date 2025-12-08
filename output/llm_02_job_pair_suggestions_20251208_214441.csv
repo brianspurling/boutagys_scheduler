@@ -1,0 +1,17 @@
+job1_ref,job1_type,job1_time,job1_location,job2_ref,job2_type,job2_time,job2_location,chain_type,cost_saving_gbp,time_saving_min,confidence
+#34909574,Collect,12/08 09:00,BR2 8LH,#35893131,Deliver,12/08 16:00,B93 9PS,Collection->Delivery (same vehicle),15.00,60,high
+#35703901,Collect,12/08 10:00,TW14 0HS,#35752144,Deliver,12/08 14:00,SE10 0EF,Collection->Delivery (same vehicle),15.00,60,high
+,Deliver,12/08 09:30,KT6 7NS,#35703901,Collect,12/08 10:00,TW14 0HS,Delivery->Collection (nearby),8.00,30,medium
+#36001565,Deliver,12/08 17:00,BH25 5BT,#35683043,Collect,12/08 17:30,BN12 6HG,Delivery->Collection (nearby),8.00,30,medium
+#36001565,Deliver,12/08 17:00,BH25 5BT,#35854119,Collect,12/08 18:00,BS8 1HP - EXT BEFORE,Delivery->Collection (nearby),8.00,60,medium
+#35752144,Deliver,12/08 14:00,SE10 0EF,#35901653,Collect,12/08 15:00,SS16 4TJ,Delivery->Collection (nearby),8.00,60,medium
+#35893131,Deliver,12/08 16:00,B93 9PS,#35910134,Collect,12/08 17:00,B63 2LT - EXT BEFORE,Delivery->Collection (nearby),8.00,60,medium
+#35893131,Deliver,12/08 16:00,B93 9PS,#35683043,Collect,12/08 17:30,BN12 6HG,Delivery->Collection (nearby),8.00,90,medium
+#35893131,Deliver,12/08 16:00,B93 9PS,#35854119,Collect,12/08 18:00,BS8 1HP - EXT BEFORE,Delivery->Collection (nearby),8.00,120,medium
+#35732685,Deliver,12/08 08:30,ME17 4HW,#35329095,Collect,12/08 10:00,ME18 5HA,Delivery->Collection (nearby),8.00,90,medium
+#35927227,Deliver,12/08 09:00,EC1Y 2BQ,#35836667,Collect,12/08 09:30,W13 9DS,Delivery->Collection (nearby),8.00,30,medium
+#35927227,Deliver,12/08 09:00,EC1Y 2BQ,#35877181,Collect,12/08 12:00,NP7 6LG,Delivery->Collection (nearby),8.00,180,medium
+#35887271,Deliver,12/08 09:00,E17 6AL,#35836667,Collect,12/08 09:30,W13 9DS,Delivery->Collection (nearby),8.00,30,medium
+#35887271,Deliver,12/08 09:00,E17 6AL,#35877181,Collect,12/08 12:00,NP7 6LG,Delivery->Collection (nearby),8.00,180,medium
+,Deliver,12/08 13:00,NW2 2EB,#35901653,Collect,12/08 15:00,SS16 4TJ,Delivery->Collection (nearby),8.00,120,medium
+#35927198,Deliver,12/08 08:30,SO51 9BE,#35353654,Collect,12/08 11:30,SO18 5HU - EXT BEFORE,Delivery->Collection (nearby),8.00,180,medium
