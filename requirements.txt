@@ -1,0 +1,13 @@
+# Van Rental Driver Scheduler - Dependencies
+
+# For future OR-Tools integration
+# ortools>=9.7.0
+
+# Data processing (all built-in for now)
+# - csv (built-in)
+# - datetime (built-in)
+# - dataclasses (built-in Python 3.7+)
+
+# Future additions:
+# google-maps-services>=4.10.0  # For real distance/time calculations
+# pandas>=2.0.0  # If we want more sophisticated data analysis
