@@ -212,42 +212,71 @@ S001,London Storage,NW10 6RS,
 
 ### Input Data Formats
 
-#### Jobs CSV [EXAMPLE DATA TO BE PROVIDED BY ED]
+#### Bookings CSV (Jobs Sheet from Manager)
+
+**Data Model:** Each row represents a booking (vehicle rental to customer). The booking has a lifecycle:
+1. Status = `BOOKING`, Action = `Deliver` → Need to deliver vehicle to customer
+2. Status = `ON HIRE`, Action = `Collect` → Customer has vehicle, need to collect it back
+3. After collection complete → Row disappears
+
+**Raw CSV columns:**
 ```csv
-job_id,date,time,job_type,vehicle_reg,vehicle_group,collection_location,delivery_location,notes
-J001,2025-12-07,09:00,collection,AB12XYZ,LWB van,SW1A1AA,,Customer pickup at 10am
-J002,2025-12-07,14:30,delivery,AB12XYZ,SWB van,EC1A7AJ,SE17QA,
-J003,2025-12-08,08:00,collection,CD34EFG,truck,B11TB,,Requires HGV license
+Book No.,Order ref:,Rental No.,Book Name,Book Status,Date,Time,Action,Reg No.,Supp'd Grp,Drivers,Delivery,Collection,Notes
+#35937429,NW94402872,8073133,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,09:00,Collect,SM73ZRL,V2,,TW11 8QA,TW11 8QA,
+,NW667AFF49,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:30,Deliver,,V2,,KT6 7NS,KT6 7NS,
+#35995475,NW17C28C44,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:00,Deliver,BC23OFJ,V3,,GU22 7NJ,GU22 7NJ,FIND A VAN!!
 ```
 
-**Fields:**
-- `job_id`: Unique identifier
-- `date`: Delivery/collection deadline date
-- `time`: Delivery/collection deadline time (vehicle must arrive by this time)
-- `job_type`: "collection" or "delivery"
-- `vehicle_reg`: Vehicle registration
-- `vehicle_group`: van, truck, [OTHER TYPES TO SPECIFY]
-- `postcode`: UK postcode for job location
-- `notes`: Optional human-readable notes
+**Key fields:**
+- `Book No.`: Booking identifier (links delivery and collection for same rental)
+- `Book Status`: "BOOKING" or "ON HIRE" (lifecycle state)
+- `Date/Time`: Deadline for the current action (delivery or collection)
+- `Action`: "Deliver" or "Collect" (what needs to happen)
+- `Reg No.`: Vehicle registration (may be blank for BOOKING status if vehicle not yet assigned)
+- `Supp'd Grp`: Vehicle group/type (V1, V2, V3, V4, V5, C.F3, C.F4, D.B9, D.B9A, E.A17, E.B17, VH18B, etc.)
+- `Drivers`: **EMPTY - this is what the scheduler fills in**
+- `Delivery`: Delivery postcode (where to take vehicle to customer)
+- `Collection`: Collection postcode (where to collect vehicle from customer)
+  - Usually same as Delivery (customer location)
+  - If different = one-way hire (uncommon)
+- `Notes`: Important operational information (vehicle requirements, extensions, special instructions)
+
+**For the optimizer:** The scheduler treats each row as an independent task:
+- Rows with `Action=Deliver` → Delivery jobs at `Delivery` postcode
+- Rows with `Action=Collect` → Collection jobs at `Collection` postcode
+- The booking linkage (via `Book No.` and `Reg No.`) is metadata that helps track vehicle lifecycle but doesn't constrain scheduling
 
 
 
 ### Output Data Format
 
-#### Driver Schedule CSV
+#### Primary Output: Updated Bookings CSV
+The scheduler fills in the `Drivers` column of the original bookings CSV:
+
 ```csv
-driver_id,driver_name,date,seq,job_id,job_type,vehicle_reg,location_postcode,arrival_time,transport_mode,transport_cost,transport_time,customer_approval_required,notes
+Book No.,Order ref:,Rental No.,Book Name,Book Status,Date,Time,Action,Reg No.,Supp'd Grp,Drivers,Delivery,Collection,Notes
+#35937429,NW94402872,8073133,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,09:00,Collect,SM73ZRL,V2,D001,TW11 8QA,TW11 8QA,
+,NW667AFF49,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:30,Deliver,,V2,D001,KT6 7NS,KT6 7NS,
+#35995475,NW17C28C44,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:00,Deliver,BC23OFJ,V3,D003,GU22 7NJ,GU22 7NJ,FIND A VAN!!
+```
+
+#### Secondary Output: Driver Schedule Detail CSV
+For each driver, a detailed schedule showing the sequence of activities:
+
+```csv
+driver_id,driver_name,date,seq,booking_ref,job_type,vehicle_reg,location_postcode,arrival_time,transport_mode,transport_cost,transport_time,customer_approval_required,notes
 D001,John Smith,2025-12-07,1,START,start,,SE17QA,08:00,,,,no,Starting from home
-D001,John Smith,2025-12-07,2,J001,collection,AB12XYZ,SW1A1AA,09:00,transit,12.50,45,no,Train from London Bridge
-D001,John Smith,2025-12-07,3,J002,delivery,AB12XYZ,SE17QA,10:30,drive,8.50,25,yes,EARLY DELIVERY - customer approval needed
-D001,John Smith,2025-12-07,4,J005,collection,CD34EFG,SE5 9RS,11:00,transit,3.20,15,no,Bus from SE17
+D001,John Smith,2025-12-07,2,#35937429,collection,SM73ZRL,TW11 8QA,09:00,transit,12.50,45,no,Train from London Bridge
+D001,John Smith,2025-12-07,3,#35937429,storage_drop,SM73ZRL,NW10 6RS,10:00,drive,6.20,30,no,Driving to London Storage
+D001,John Smith,2025-12-07,4,NW667AFF49,delivery,TBA,KT6 7NS,10:30,transit,3.20,15,yes,EARLY DELIVERY - customer approval needed
 D001,John Smith,2025-12-07,5,END,end,,SE17QA,17:00,transit,8.00,30,no,Return home
 ```
 
 **Key fields:**
-- `vehicle_reg`: Vehicle registration (blank for START/END and public transport legs)
+- `booking_ref`: Links to `Book No.` or `Order ref:` from bookings CSV
+- `vehicle_reg`: Vehicle registration (may be "TBA" for BOOKING status without vehicle assigned)
 - `customer_approval_required`: "yes" if job is scheduled outside specified time window (early delivery or late collection), "no" otherwise
-- This flag alerts staff to confirm with customer before executing the job
+- `job_type`: Can be "collection", "delivery", "storage_drop", "storage_pickup", "start", "end"
 
 **Additional Outputs:**
 - Cost summary per driver per day
