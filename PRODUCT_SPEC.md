@@ -246,6 +246,12 @@ Book No.,Order ref:,Rental No.,Book Name,Book Status,Date,Time,Action,Reg No.,Su
 - Rows with `Action=Collect` → Collection jobs at `Collection` postcode
 - The booking linkage (via `Book No.` and `Reg No.`) is metadata that helps track vehicle lifecycle but doesn't constrain scheduling
 
+**Data processing approach:**
+- **No physical pivot needed**: The optimizer reads the bookings CSV directly and parses each row into a task
+- **Internal representation**: Within the optimizer code, each booking row becomes a job object with properties: location (Delivery or Collection postcode), deadline (Date/Time), vehicle_type (Supp'd Grp), etc.
+- **Output mapping**: Results map 1:1 back to booking rows (fill Drivers column)
+- **Benefit**: Simpler workflow, no intermediate files, easier to maintain sync with manager's source data
+
 
 
 ### Output Data Format
