@@ -1,0 +1,23 @@
+job_ref,urgency,constraints,vehicle_restrictions,special_instructions,warnings,location_hints,confidence,summary,original_note
+#35995475,urgent,Vehicle assignment needed,,,,high,Customer urgently needs vehicle assigned,FIND A VAN!!
+#36001565,high,,Manual transmission required,,,high,Vehicle must have manual transmission,MUST BE MANUAL
+#35666720,medium,,Use RRV (replacement rental vehicle),,,medium,Use replacement rental vehicle,USE RRV
+#35893131,low,,,,,Putney,high,Vehicle currently at Putney storage,at Putney
+#35707611,medium,,,Customer follow-up required - uncollected vehicle,,,high,Follow up needed - customer hasn't collected yet (04/12/2025),"04/12/2025 (mo) 1315 Chasing Collection of the Vehicle"
+#35990436,medium,,,Check MOT date before assignment,MOT expiring soon,,high,Vehicle MOT due - verify date before long trips,MOT due
+#35732685,low,,,,,Feltham,high,Vehicle at Feltham storage location,FELTHAM
+#35826739,low,,,,,Feltham,high,Vehicle at Feltham storage location,FELTHAM
+#35885448,low,,,,,Feltham,high,Vehicle at Feltham storage location,FELTHAM
+#35223620,medium,Customer uncollected vehicle; Vehicle on public road,,Keys on top of nearside front tyre; Vehicle relocated to 17 Kitchenor Road Amesbury SP4 7AA,Customer failed to collect,,high,Uncollected vehicle moved to public road at 17 Kitchenor Road Amesbury - keys on front tyre,"03/11/2025 1523 [JET]: As not collected, van now moved to public rosd outside 17 Kitchenor Road, Amesbury SP4 7AA.. Keys on top of nearside front tyre"
+#35873727,medium,,,Vehicle has engine warning light,Engine management light on,Paice,medium,Vehicle at Paice location with engine management light on,at Paice EML on
+#35991493,low,,,,,Putney,high,Vehicle currently at Putney storage,at Putney
+#35927227,low,,,,,,high,Collect vehicle from PO12 3UB postcode,COLL PO12 3UB
+#35979670,urgent,Vehicle is SORN - cannot be driven on public roads; Must be transported on trailer,,,Vehicle legally off-road (SORN),Nottingham,high,Vehicle is SORN - must be transported on trailer not driven,SORN Nottingham
+#35826723,low,Location same as previous job,,,,,medium,Location matches previous job in sequence,same place as above
+#35887271,low,,,,,Putney,high,Vehicle currently at Putney storage,at Putney
+#35916819,low,,,,,Feltham,high,Vehicle at Feltham storage location,FELTHAM
+#35811898,urgent,Cannot drive until tyre repaired,,Tyre repair scheduled Monday with Dial-a-Tyre Gosport,Front tyre completely flat,,high,Front tyre flat - repair scheduled Monday - vehicle cannot be driven until fixed,"06/12/2025 0820 [ED]: FRONT TYRE IS TOTALLY FLAT - DIAL-A-TYRE GOSPORT GOING OUT ON MONDAY"
+#35927198,low,,,Vehicle needs cleaning after collection from HP18 9UB,,,high,Clean vehicle after collecting from HP18 9UB,COLL HP18 9UB
+#35937464,low,,,,,Putney,high,Vehicle currently at Putney storage,at Putney
+#35979693,low,,Rental extended,,,low,Rental period has been extended by customer,extended
+#35978048,medium,,Confirm return details,Vehicle MW73GVU returning Carlton Sunday 06/12,,,medium,Vehicle MW73GVU scheduled to return at Carlton on Sunday 06/12,CF 06/12 MW73GVU RTN IN CARLTON SUNDAY

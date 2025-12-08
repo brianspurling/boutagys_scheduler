@@ -468,6 +468,31 @@ Driver stays overnight away from home if:
 - 600 × 4,000 tokens avg = 2.4M tokens/month
 - **Cost: $10-20/month**
 
+**Cost-Saving Alternative: Manual LLM Heuristics Mode**
+
+For organizations wanting LLM intelligence without API costs, the system supports a "manual mode" for LLM heuristics:
+
+**How it works:**
+1. System generates a prompt file containing all job notes and context
+2. User copies prompt into any Claude interface (claude.ai with Pro subscription)
+3. User pastes Claude's response back into the system
+4. System parses response and generates structured heuristics output
+
+**Benefits:**
+- Zero API costs (uses existing Claude Pro subscription ~$20/month)
+- Same intelligent analysis as automated mode
+- Good for getting started before committing to API integration
+- Adds ~2-3 minutes of manual work per scheduling run
+
+**Trade-offs:**
+- Manual copy/paste step required
+- Not suitable for fully automated workflows
+- Good for: Initial adoption, low-volume usage, cost-conscious deployments
+
+**Recommended approach:**
+- Start with manual mode to validate LLM value
+- Switch to API mode once proven valuable for automation
+
 #### Hosting Costs
 **Option A: Cloud Hosting (AWS/GCP/Azure)**
 - Small compute instance: $20-50/month
