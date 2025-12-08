@@ -1,21 +1,21 @@
 driver_id,name,home_postcode,branch,max_hours_per_day,certifications,can_overnight,unavailable_dates,home_location,notes
-D001,Jassim,W2,PUTNEY,10,van,yes,,,NRC - Kensington area
-D002,Aaron Day,EC1Y,PUTNEY,10,van,yes,,,Clerkenwell area
-D003,Attila,CV21,PUTNEY,10,van,yes,,,Rugby area
-D004,Chris Nobes,TW14,PUTNEY,10,van,yes,,,Feltham area
-D005,Dalibor,SW15,PUTNEY,10,van,yes,,,Putney area
-D006,Dave,SW13,PUTNEY,10,van;truck,yes,,,Barnes area - NRC&SRC - C1 certified
-D007,Dean,KT10,PUTNEY,10,van;truck,yes,,,Esher area - NRC - C1 certified
-D008,Ferdinand,CR2,PUTNEY,10,van,yes,,,Croydon area - NRC
-D009,Gabor Deak,[TO CONFIRM],PUTNEY,10,van;truck,yes,,,Notts area - NRC - C certified
-D010,Hesham,SW15,PUTNEY,10,van,yes,,,Putney area
-D011,Jim Lynch,SW6,PUTNEY,10,van;truck,yes,,,Fulham area - NRC - C certified
-D012,Kasia,SE13,PUTNEY,10,van,yes,,,Lewisham area
-D013,Kenneth,SE25,PUTNEY,10,van,yes,,,
-D014,Lourens,HP23,PUTNEY,10,van;truck,yes,,,Tring area - NRC - C certified
-D015,Shaun,SW13,PUTNEY,10,van,yes,,,Barnes area
-D016,Viktor,[TO CONFIRM],PUTNEY,10,van,yes,,,NW London area
-D017,Dinis,[TO CONFIRM],FELTHAM,10,van;truck,yes,,,C certified
-D018,Mateusz,[TO CONFIRM],FELTHAM,10,van;truck,yes,,,C certified
-D019,Sebastian,[TO CONFIRM],FELTHAM,10,van,yes,,,
-D020,Simon,[TO CONFIRM],FELTHAM,10,van;truck,yes,,,C1 certified
+D001,Jassim,W2 1NY,PUTNEY,10,van,yes,,51.5154/-0.1784,NRC - Kensington area
+D002,Aaron Day,EC1Y 8QA,PUTNEY,10,van,yes,,51.5243/-0.1003,Clerkenwell area
+D003,Attila,CV21 3DH,PUTNEY,10,van,yes,,52.3706/-1.2634,Rugby area
+D004,Chris Nobes,TW14 9QA,PUTNEY,10,van,yes,,51.4519/-0.4090,Feltham area
+D005,Dalibor,SW15 1DT,PUTNEY,10,van,yes,,51.4607/-0.2248,Putney area
+D006,Dave,SW13 9RZ,PUTNEY,10,van;truck,yes,,51.4820/-0.2421,Barnes area - NRC&SRC - C1 certified
+D007,Dean,KT10 8AA,PUTNEY,10,van;truck,yes,,51.3667/-0.3634,Esher area - NRC - C1 certified
+D008,Ferdinand,CR2 6AA,PUTNEY,10,van,yes,,51.3364/-0.0985,Croydon area - NRC
+D009,Gabor Deak,NG1 1AA,PUTNEY,10,van;truck,yes,,52.9548/-1.1581,Nottingham area - NRC - C certified
+D010,Hesham,SW15 2RS,PUTNEY,10,van,yes,,51.4588/-0.2169,Putney area
+D011,Jim Lynch,SW6 2TN,PUTNEY,10,van;truck,yes,,51.4812/-0.1951,Fulham area - NRC - C certified
+D012,Kasia,SE13 5EX,PUTNEY,10,van,yes,,51.4633/0.0084,Lewisham area
+D013,Kenneth,SE25 4QL,PUTNEY,10,van,yes,,51.3981/-0.0904,South Norwood area
+D014,Lourens,HP23 5PS,PUTNEY,10,van;truck,yes,,51.7947/-0.6630,Tring area - NRC - C certified
+D015,Shaun,SW13 0NY,PUTNEY,10,van,yes,,51.4749/-0.2334,Barnes area
+D016,Viktor,NW10 7BQ,PUTNEY,10,van,yes,,51.5343/-0.2454,NW London area
+D017,Dinis,TW14 8NX,FELTHAM,10,van;truck,yes,,51.4485/-0.4247,Feltham area - C certified
+D018,Mateusz,TW14 0LN,FELTHAM,10,van;truck,yes,,51.4474/-0.4199,Feltham area - C certified
+D019,Sebastian,TW13 7EJ,FELTHAM,10,van,yes,,51.4452/-0.4311,Feltham area
+D020,Simon,TW13 5DN,FELTHAM,10,van;truck,yes,,51.4509/-0.4124,Feltham area - C1 certified
