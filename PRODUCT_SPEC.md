@@ -52,6 +52,12 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 - The next day, they're back in their collected van and bringing it back down to London. It's filthy, so they go via a car wash then drop the van straight to the next customer
 - They have time for one more job, which is a nearby collection (public transport to get there). This van isn't needed for a few days, so they take it to a storage location (where it can be cleaned by staff), then head home by public transport
 
+### The Structure of a Booking
+
+- A **booking** is a rental of a single vehicle by a single customer
+- Bookings have a status that is, at first, "Booking", with a corresponding action of "Deliver", and then becomes "On hire", with a  corresponding action of "Collect"
+- This way, each booking generates two "jobs"...
+
 ### The Structure of a Job
 
 - A **job** is one of two **job types**: a **delivery** job or a **collection** job
