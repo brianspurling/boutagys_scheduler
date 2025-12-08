@@ -1,0 +1,4 @@
+location_id,name,postcode,capacity,restricted_vehicle_groups,lat_long
+S001,Feltham,TW14 9DF,30,,51.4502/-0.4084
+S002,Putney Head Office,SW15 2SW,6,,51.4576/-0.2289
+S003,London Wetlands Centre,SW13 9SA,70,,51.4821/-0.2274
