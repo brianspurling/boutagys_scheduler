@@ -63,9 +63,31 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 - A **job** is one of two **job types**: a **delivery** job or a **collection** job
 - Each job moves a single **vehicle** between either of two location types: **customer locations** and **storage locations**
 - Jobs can include an **overnight break**, either at the driver's house or at overnight accommodation
-- Each job is comprised of up to two journey **stages**:
-  - Stage 1: the driver's travel *to* the vehicle 
-  - Stage 2: the driver's travel *in* the vehicle
+
+#### Two-Stage Job Model (CRITICAL FOR OPTIMIZATION)
+
+**Every job has up to two stages** representing different types of travel:
+
+**DELIVERY JOB (vehicle starts at storage, ends at customer):**
+- **Stage 1**: Driver travels TO the vehicle (public transport: driver's location → storage location)
+- **Stage 2**: Driver travels IN the vehicle (driving: storage location → customer location)
+
+**COLLECTION JOB (vehicle starts at customer, ends at storage):**
+- **Stage 1**: Driver travels TO the vehicle (public transport: driver's location → customer location)
+- **Stage 2**: Driver travels IN the vehicle (driving: customer location → storage location)
+
+**Why this matters for optimization:**
+- Each stage has different costs: PT = ~£0.20/km, Driving = ~£0.45/km
+- Job chaining can ELIMINATE stages (huge cost savings)
+- Example: Collection→Delivery of same vehicle eliminates BOTH Stage 1 of delivery AND Stage 2 of collection (saves 2 PT legs!)
+
+**Unchained job costs:**
+- Delivery (unchained): PT leg + fuel + PT return home = **3 legs total**
+- Collection (unchained): PT leg + fuel + PT return home = **3 legs total**
+
+**Chained job savings:**
+- Collection→Delivery (same vehicle): PT leg + fuel = **2 legs total** (saves 1 PT return + 1 PT outbound)
+- Multiple chains in sequence: Even greater savings
 
 ### Job Chaining
 

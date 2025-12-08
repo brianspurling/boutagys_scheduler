@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 from data_loader import load_all_data
 from distance import DistanceCalculator
 from llm_heuristics import LLMHeuristics
-from optimizer import ScheduleOptimizer
+from routing_optimizer import RoutingOptimizer
 from output import write_llm_heuristics_output, write_final_schedule
 
 
@@ -75,10 +75,13 @@ def main():
         traceback.print_exc()
         return 1
 
-    # Step 5: Run OR-Tools Optimizer
-    print("\n🔧 Step 5: Running OR-Tools Optimizer...")
+    # Step 5: Run OR-Tools Routing Optimizer
+    print("\n🔧 Step 5: Running OR-Tools Routing Optimizer...")
+    print("  ├─ Using two-stage job model")
+    print("  ├─ Optimizing job sequences and chaining")
+    print("  └─ Enforcing time windows")
     try:
-        optimizer = ScheduleOptimizer(
+        optimizer = RoutingOptimizer(
             data['jobs'],
             data['drivers'],
             data['locations'],
@@ -87,7 +90,7 @@ def main():
             heuristics_result
         )
 
-        assignments = optimizer.optimize(time_limit_seconds=60)
+        assignments = optimizer.optimize(time_limit_seconds=180)  # 3 min for complex routing
 
         if not assignments:
             print("  ❌ Optimizer could not find a feasible schedule")
