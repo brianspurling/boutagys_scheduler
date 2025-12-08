@@ -116,8 +116,8 @@ The Effect of Chaining on Job Stages:
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │         INPUT LAYER                                            │
-│  - Core Data CSV Upload (Drivers, Storage Locations)           │
-│  - Jobs Upload (Phase 1: CSV Integration, Future Phase: API)   │
+│  - Core Data: Drivers, Storage Locations, Vehicle Inventory    │
+│  - Bookings: Jobs Sheet (CSV/API)                              │
 └──────────────┬─────────────────────────────────────────────────┘
                │
                ↓
@@ -215,6 +215,34 @@ S001,London Storage,NW10 6RS,
 - `name`: Location name
 - `postcode`: UK postcode
 - `restricted_vehicle_groups`: a semicolon-separated list of vehicle types that the storage location cannot take
+
+#### Vehicle Inventory CSV [TO BE CONFIRMED BY ED]
+**Purpose:** Tracks current location of all vehicles in storage (starting point for deliveries)
+
+```csv
+vehicle_reg,vehicle_group,current_storage_location,availability_date,notes
+SM73ZRL,V2,S001,2025-12-08,Needs cleaning
+BC23OFJ,V3,O001,2025-12-08,
+WU24DLO,V75BT,S001,2025-12-09,MOT due
+```
+
+**Fields:**
+- `vehicle_reg`: Vehicle registration
+- `vehicle_group`: Vehicle type (V1, V2, V3, etc.)
+- `current_storage_location`: Which storage location the vehicle is currently at (location_id)
+- `availability_date`: When vehicle is available for next booking (after cleaning, maintenance, etc.)
+- `notes`: Operational notes (maintenance required, damage, etc.)
+
+**How the optimizer uses this:**
+- For DELIVERY jobs: Vehicle starts from `current_storage_location` (unless chained from a collection)
+- For COLLECTION jobs: Vehicle location is known from the `Collection` postcode in bookings CSV
+- When `Reg No.` is blank in bookings CSV: Optimizer selects an available vehicle of the correct type from inventory
+- As the optimizer assigns jobs, it implicitly tracks vehicle flow:
+  - Collections move vehicles from customers to storage (or chain to deliveries)
+  - Deliveries move vehicles from storage to customers (or chain from collections)
+- This inventory represents the "snapshot" at planning time; the optimizer projects forward from there
+
+**Important:** The optimizer must respect `availability_date` - vehicles undergoing maintenance/cleaning cannot be assigned until available
 
 ### Input Data Formats
 
@@ -485,6 +513,12 @@ Driver stays overnight away from home if:
    - [ ] Is there a default/preferred storage per region?
    - [ ] Any capacity limits per storage location?
    - [ ] Any handling time or cost when routing through storage?
+
+5a. **Vehicle inventory:**
+   - [ ] Can you provide a snapshot of current vehicle locations (which vehicles are at which storage locations)?
+   - [ ] How is this tracked currently? (Spreadsheet? System?)
+   - [ ] How often does this change? (Daily updates needed?)
+   - [ ] Are there vehicles undergoing maintenance/cleaning that shouldn't be assigned?
 
 6. **Time windows:**
    - [ ] What % of jobs are "exact time" vs "flexible window"?
