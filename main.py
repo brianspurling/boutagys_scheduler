@@ -14,17 +14,18 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 from data_loader import load_all_data
 from distance import DistanceCalculator
 from llm_heuristics import LLMHeuristics
-from output import write_llm_heuristics_output
+from optimizer import ScheduleOptimizer
+from output import write_llm_heuristics_output, write_final_schedule
 
 
 def main():
     """
     Main execution flow:
     1. Load data from CSVs
-    2. Run LLM heuristics (geographical analysis, job pairing)
-    3. Output intermediary results
-    4. [TODO] Run OR-Tools optimizer
-    5. [TODO] Output final schedule
+    2. Run LLM heuristics (geographical analysis, job pairing, notes parsing)
+    3. Output intermediary results (5 CSV files)
+    4. Run OR-Tools optimizer (job-driver assignments)
+    5. Output final schedule
     """
     print("=" * 70)
     print("🚐 VAN RENTAL DRIVER SCHEDULER - SPIKE")
@@ -74,15 +75,53 @@ def main():
         traceback.print_exc()
         return 1
 
-    # Step 5: Summary
+    # Step 5: Run OR-Tools Optimizer
+    print("\n🔧 Step 5: Running OR-Tools Optimizer...")
+    try:
+        optimizer = ScheduleOptimizer(
+            data['jobs'],
+            data['drivers'],
+            data['locations'],
+            data['vehicles'],
+            distance_calc,
+            heuristics_result
+        )
+
+        assignments = optimizer.optimize(time_limit_seconds=60)
+
+        if not assignments:
+            print("  ❌ Optimizer could not find a feasible schedule")
+            return 1
+
+    except Exception as e:
+        print(f"  ❌ Error in optimization: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+    # Step 6: Output Final Schedule
+    print("\n📋 Step 6: Writing Final Schedule...")
+    try:
+        write_final_schedule(assignments, 'output', 'final_schedule_spike.csv')
+    except Exception as e:
+        print(f"  ❌ Error writing schedule: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+    # Step 7: Summary
     print("\n" + "=" * 70)
-    print("✅ SPIKE PHASE 1 COMPLETE")
+    print("✅ SPIKE COMPLETE - END TO END")
     print("=" * 70)
+    print(f"\nGenerated schedule with {len(assignments)} job assignments")
+    print("\nOutputs:")
+    print("  • LLM Heuristics: output/llm_*_*.csv (5 files)")
+    print("  • Final Schedule: output/final_schedule_spike.csv")
     print("\nNext Steps:")
-    print("  1. Review LLM heuristics output in output/ directory")
-    print("  2. Implement constraint validation")
-    print("  3. Integrate OR-Tools optimizer")
-    print("  4. Generate final schedule")
+    print("  1. Review final schedule")
+    print("  2. Validate against business rules")
+    print("  3. Compare with manager's manual schedule")
+    print("  4. Identify areas for refinement")
     print("\n")
 
     return 0

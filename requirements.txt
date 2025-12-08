@@ -3,8 +3,8 @@
 # LLM-based notes parsing
 anthropic>=0.40.0
 
-# For future OR-Tools integration
-# ortools>=9.7.0
+# Optimization
+ortools>=9.7.0
 
 # Data processing (all built-in for now)
 # - csv (built-in)
