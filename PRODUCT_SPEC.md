@@ -9,12 +9,12 @@
 ## 1. Executive Summary
 
 ### Problem Statement
-The van rental business currently manages driver scheduling manually using spreadsheets. With 20 drivers completing ~100 jobs daily, the manual process is extremely time-consuming and possibly sub-optimal schedules.
+The van rental business currently manages driver scheduling manually using spreadsheets. With 20 drivers completing ~100 jobs daily, the manual process is extremely time-consuming and possibly producing sub-optimal schedules.
 
 ### Proposed Solution
 An automated scheduling system that optimizes driver assignments and job sequencing to minimize costs while respecting all business constraints. The system will:
 - Plan 4 days ahead with rolling updates
-- Maximize job chaining to keep complete as many jobs as possible
+- Maximize job chaining to complete as many jobs as possible
 - Optimize for job completion rate, fuel efficiency, public transport costs, and overnight stays
 - Handle driver skills/certifications and working hour limits
 - Allow human oversight and manual overrides
@@ -23,7 +23,7 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 ### Expected Benefits
 - **Cost Reduction:** [ESTIMATE: X%] reduction in fuel, public transport and overnight accommodation costs
 - **Manager Time Savings:** [ESTIMATE: X hours/week] saved on manual scheduling
-- **Driver Efficiency Imprvoement:** [ESTIMATE: X%] increase in jobs completed 
+- **Driver Efficiency Improvement:** [ESTIMATE: X%] increase in jobs completed 
 - **Flexibility:** Rapid re-optimization when jobs change
 - **Scalability:** System can grow with business
 - **Insights:** Data-driven understanding of scheduling patterns and costs
@@ -43,7 +43,7 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 
 - The driver wakes at home in the London suburbs
 - They don't already have a vehicle with them, so they check their schedule and hop on public transport to their first collection - from a nearby customer
-- They get the keys from the customer and drive the van to another customer, also nearby, who's rental starts today. It's not too dirty, so the driver gives it a quick hoover at a gas station and arrives at the customer's location 10 minutes before the booked delivery time
+- They get the keys from the customer and drive the van to another customer, also nearby, whose rental starts today. It's not too dirty, so the driver gives it a quick hoover at a gas station and arrives at the customer's location 10 minutes before the booked delivery time
 - Then they're back on public transport and heading to one of the company storage locations to pick up another vehicle
 - They get the keys from the staff member at the storage location and drive the van all the way up to a customer in Edinburgh
 - (This delivery is a few days early, but there's a vehicle in Newcastle due to be picked up that's needed back in London tomorrow, so rather than sending a driver up to get it on public transport, it's great to get this delivery job done at the same time)
@@ -52,7 +52,7 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 - The next day, they're back in their collected van and bringing it back down to London. It's filthy, so they go via a car wash then drop the van straight to the next customer
 - They have time for one more job, which is a nearby collection (public transport to get there). This van isn't needed for a few days, so they take it to a storage location (where it can be cleaned by staff), then head home by public transport
 
-### The Structure of Job
+### The Structure of a Job
 
 - A **job** is one of two **job types**: a **delivery** job or a **collection** job
 - Each job moves a single **vehicle** between either of two location types: **customer locations** and **storage locations**
@@ -66,11 +66,11 @@ An automated scheduling system that optimizes driver assignments and job sequenc
 Jobs can be **chained** together in six different **chain types**:
 
 - Collection -> Delivery: A vehicle is *collected* from one customer location (job A), then the driver *delivers* the same vehicle to another customer location (job B)
-- Delivery -> Collection: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to another customer locationto *collect* a second vehicle (job B)
-- Delivery -> Delivery: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to a storage location to pick up a second vhiecle to *deliver* to another customer location (job B)
+- Delivery -> Collection: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to another customer location to *collect* a second vehicle (job B)
+- Delivery -> Delivery: A vehicle is *delivered* to one customer location (job A), then the driver takes public transport to a storage location to pick up a second vehicle to *deliver* to another customer location (job B)
 - Collection -> Collection: A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another customer location to *collect* a second vehicle
-- Collection (to storage) -> Delivery (from same storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver picks up a second vehicle to *deliver* to another customer locaion (job B)
-- Collection (to storage) -> Delivery (from different storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another storage location to pick up a second vehicle to *deliver* to another customer locaion (job B)
+- Collection (to storage) -> Delivery (from same storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver picks up a second vehicle to *deliver* to another customer location (job B)
+- Collection (to storage) -> Delivery (from different storage): A vehicle is *collected* from one customer location and taken to a storage location (job A), then the driver takes public transport to another storage location to pick up a second vehicle to *deliver* to another customer location (job B)
 
 The Effect of Chaining on Job Stages: 
 
@@ -205,10 +205,10 @@ S001,London Storage,NW10 6RS,
 ```
 
 **Fields:**
-- `office_id`: Unique identifier
+- `location_id`: Unique identifier
 - `name`: Location name
 - `postcode`: UK postcode
-- `restricted_vehicle_groups`: a semicolon-separated list of vechicle types that the storage location cannot take
+- `restricted_vehicle_groups`: a semicolon-separated list of vehicle types that the storage location cannot take
 
 ### Input Data Formats
 
@@ -384,7 +384,7 @@ Driver stays overnight away from home if:
 
 ---
 
-### Monthly Operating Costs
+## 7. Monthly Operating Costs
 
 #### Google Maps API Costs
 **Assumptions:**
@@ -538,7 +538,7 @@ Driver stays overnight away from home if:
 1. **Management Effort Reduction**
    - Time spent scheduling (target: 80% reduction in manual effort)
    - Time spent re-scheduling when jobs change
-  
+
 2. **Cost Reduction:**
    - PT cost per job (target: 20-30% reduction)
    - Total weekly PT spend
@@ -549,8 +549,8 @@ Driver stays overnight away from home if:
    - Average jobs per driver per day (target: maintain or increase current 5)
    - Average job chain length (target: 3+ consecutive jobs)
    - PT legs per driver per day (target: minimize)
-   
-3. **Service Quality:**
+
+4. **Service Quality:**
    - % jobs completed on-time (target: 100%)
    - % jobs delivered early (measure benefit)
    - Driver satisfaction (reduced travel time/cost)
