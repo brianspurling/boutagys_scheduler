@@ -268,7 +268,7 @@ Book No.,Order ref:,Rental No.,Book Name,Book Status,Date,Time,Action,Reg No.,Su
 - `Action`: "Deliver" or "Collect" (what needs to happen)
 - `Reg No.`: Vehicle registration (may be blank for BOOKING status if vehicle not yet assigned)
 - `Supp'd Grp`: Vehicle group/type (V1, V2, V3, V4, V5, C.F3, C.F4, D.B9, D.B9A, E.A17, E.B17, VH18B, etc.)
-- `Drivers`: **EMPTY - this is what the scheduler fills in**
+- `Drivers`: Customer name/identifier (person renting the vehicle) - **NOT the staff driver assignment**
 - `Delivery`: Delivery postcode (where to take vehicle to customer)
 - `Collection`: Collection postcode (where to collect vehicle from customer)
   - Usually same as Delivery (customer location)
@@ -290,15 +290,28 @@ Book No.,Order ref:,Rental No.,Book Name,Book Status,Date,Time,Action,Reg No.,Su
 
 ### Output Data Format
 
-#### Primary Output: Updated Bookings CSV
-The scheduler fills in the `Drivers` column of the original bookings CSV:
+#### Primary Output: Driver Job Assignments CSV
+A new CSV file with one row per job (not per booking), showing which staff driver is assigned to each job:
 
 ```csv
-Book No.,Order ref:,Rental No.,Book Name,Book Status,Date,Time,Action,Reg No.,Supp'd Grp,Drivers,Delivery,Collection,Notes
-#35937429,NW94402872,8073133,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,09:00,Collect,SM73ZRL,V2,D001,TW11 8QA,TW11 8QA,
-,NW667AFF49,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:30,Deliver,,V2,D001,KT6 7NS,KT6 7NS,
-#35995475,NW17C28C44,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:00,Deliver,BC23OFJ,V3,D003,GU22 7NJ,GU22 7NJ,FIND A VAN!!
+job_driver,date,time,action,booking_ref,vehicle_reg,vehicle_group,location_postcode,customer_name,customer_approval_required,notes
+D001,2025-12-08,08:30,Collect,#35916771,WU24DLJ,V75BT,TW14 0RX,NATIONWIDE HIRE UK,no,
+D001,2025-12-08,09:00,Deliver,#35666720,WU24DLO,V75BT,UB5 5AW,NATIONWIDE HIRE UK,no,USE RRV
+D001,2025-12-08,14:00,Deliver,#35752144,ML23LGW,V5,SE10 0EF,NATIONWIDE HIRE UK,yes,EARLY DELIVERY - customer approval needed
+D002,2025-12-08,08:30,Collect,#35937429,SM73ZRL,V2,TW11 8QA,NATIONWIDE HIRE UK,no,
+D002,2025-12-08,09:30,Deliver,NW667AFF49,,V2,KT6 7NS,NATIONWIDE HIRE UK,no,
 ```
+
+**Key fields:**
+- `job_driver`: Staff driver ID (D001, D002, etc.) assigned to this job
+- `date`, `time`, `action`, `booking_ref`, `vehicle_reg`, `vehicle_group`, `location_postcode`: From bookings CSV
+- `customer_name`: From "Drivers" column in bookings CSV (the customer, not staff)
+- `customer_approval_required`: "yes" if job is scheduled outside specified time window (early delivery or late collection), "no" otherwise
+
+**Ordering:**
+- Rows grouped by `job_driver` (all jobs for D001, then all for D002, etc.)
+- Within each driver, sorted by `date` then `time` (chronological order)
+- This makes it easy to read each driver's schedule sequentially
 
 #### Secondary Output: Driver Schedule Detail CSV
 For each driver, a detailed schedule showing the sequence of activities:
