@@ -14,6 +14,8 @@ See `spec/high-level-spec.md` for the full problem definition.
 
 **We move slowly and deliberately. No rushing to code.**
 
+**Before starting any new task: check in with the user first. Confirm what we're about to build, agree on the approach, then proceed.**
+
 The sequence is fixed:
 
 **Discuss & agree** before building anything
