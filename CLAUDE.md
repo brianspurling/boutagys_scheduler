@@ -43,6 +43,7 @@ zBin/           # Old spike code — kept for reference only, do not modify
 
 ### Input (changes daily)
 - `input/sample_bookings_data.csv` — bookings with columns: Book No., Order ref, Rental No., Book Name, Book Status, Date, Time, Action (Collect/Deliver), Reg No., Supp'd Grp, Drivers, Delivery postcode, Collection postcode, Notes
+- The `Drivers` column in the input is blank on raw input files — it is populated in the human-solved output (used for test case baselines in Stage 2)
 
 ### Reference (stable)
 - `ref-data/drivers.csv` — driver_id, name, home_postcode, branch, max_hours_per_day, certifications (van / van+truck), can_overnight, unavailable_dates, home_location (lat/lon), notes
@@ -53,11 +54,12 @@ zBin/           # Old spike code — kept for reference only, do not modify
 
 ## Key Domain Concepts
 
-- **Job**: a single relocation task — either a Collect (pick up van from customer) or Deliver (drop van to customer). Two jobs can be chained: collect a van, then deliver it, with a mandatory 45-minute turnaround buffer.
+- **Job**: a single relocation task — either a Collect (pick up van from customer) or Deliver (drop van to customer). Two jobs can be chained: collect a van, then deliver it, with a mandatory 45-minute turnaround buffer. Jobs are independent rows in the input CSV — do not infer any link between adjacent rows.
 - **Deadhead**: driver travel *between* jobs using public transit or cycling. This counts against their daily hour limit.
-- **Vehicle group**: ~10 types (V2, V3, V5, D.B9, E.A17, etc.). Driver certifications must match — `van` cert covers standard groups, `van+truck` covers all.
+- **Vehicle group**: ~10 types (V2, V3, V5, D.B9, E.A17, etc.). Driver certifications must match — `van` cert covers standard groups, `van+truck` covers trucks only. **Known truck groups: C.F4 and E.A17. Verify this list is complete before finalising the constraint model.**
 - **TBA vehicle**: a Deliver job where `Reg No.` is blank — solver must select the best available vehicle from the pool matching the required group.
-- **Rolling horizon**: 4–5 day look-ahead window. Day 1 is frozen for dispatch after each run.
+- **Rolling horizon**: 4–5 day look-ahead window. Day 1 is frozen for dispatch after each run. The horizon start date is passed in as a parameter; if omitted it defaults to tomorrow.
+- **Nodes**: there are two types of location node — **customer postcodes** (hundreds, from job Delivery/Collection fields) and **storage locations** (3 depots: Feltham, Putney, Wetlands). They are modelled the same way but are distinct in scale and purpose.
 - **Storage locations**: Physical depots with hard capacity limits. Overall node capacity must be tracked across the horizon using Cumulative/Reservoir constraints (tracking the integer sum of vehicle arrivals minus departures), rather than tracking the individual identities of idle assets.
 
 ---
@@ -90,9 +92,16 @@ To be formally defined in the scoring stage, but the high-level targets are:
 Parse and validate all input/ref data into a typed domain model. Goal: a clean, validated in-memory representation of a day's scheduling problem, ready to be consumed by downstream stages.
 
 - No solver logic here
-- But data model must be designed with high level solution in mind
+- But data model must be designed with the high-level solution in mind
 - Must surface data quality issues (missing postcodes, unknown vehicle groups, etc.)
 - Must produce a deterministic, reproducible output from the same input
+
+**Bookings CSV parsing rules:**
+- Strip blank rows first (used as visual separators in the human spreadsheet, carry no meaning)
+- Each row is an independent job — do not infer links between adjacent rows
+- Strip postcode suffixes: remove everything after the first space-separated postcode token (e.g. `BH23 5LJ*PRE-DELIVERY*` → `BH23 5LJ`, `B92 0AE - EXT BEFORE` → `B92 0AE`)
+- `Supp'd Grp` may contain upgrade notation with `>` (e.g. `E.A17>D.B9A`): take the second (rightmost) value as the operative vehicle group
+- Job notes are descoped for now — store as a raw string, do not parse for structured constraints
 
 ### Stage 2 — Test Suite
 A set of real-world scheduling days with:
