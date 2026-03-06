@@ -6,7 +6,7 @@ A bespoke vehicle relocation solver for a van rental operation. The problem is a
 
 In OR terms: a Deterministic, Multi-Resource, Time-Dependent, Multi-Period Inventory-Routing Problem with External Transfer Modes.
 
-See `spec/high-level-spec.md` for the full problem definition.
+See `docs/specs/high-level-spec.md` for the full problem definition.
 
 ---
 
@@ -34,7 +34,9 @@ Do not skip ahead. Do not scaffold the optimizer while working on the data pipel
 ```
 input/          # Daily scheduling input (bookings CSV)
 ref-data/       # Stable reference data (drivers, vehicles, storage locations)
-spec/           # Problem specification documents
+docs/
+  specs/        # Problem specification documents
+  plans/        # Design docs and implementation plans
 output/         # Generated schedules and scoring output
 zBin/           # Old spike code — kept for reference only, do not modify
 ```
@@ -97,6 +99,18 @@ Parse and validate all input/ref data into a typed domain model. Goal: a clean, 
 - But data model must be designed with the high-level solution in mind
 - Must surface data quality issues (missing postcodes, unknown vehicle groups, etc.)
 - Must produce a deterministic, reproducible output from the same input
+
+**Data model design**: see `docs/plans/2026-03-06-data-model-design.md` for the approved design. Key decisions:
+- **Pydantic frozen models** — immutable, validated, serializable domain objects
+- **Builder pattern** — `ProblemBuilder` ingests CSVs, validates, computes arcs, produces an immutable `ProblemInstance`
+- **Dual time representation** — human-readable `datetime` + integer-minute offsets from horizon start on all time fields
+- **Pre-computed arc graph** — builder pre-prunes infeasible DriverJobArcs, VehicleJobArcs, and JobChainArcs before the solver sees them
+- **Dual-mode transit matrix** — stores both `transit_minutes` (PT deadhead with +15% buffer) and `driving_minutes` per location pair
+- **Two chain types** — DRIVER_ONLY (PT between jobs) and VEHICLE_DRIVER (collect→deliver with 45-min turnaround, matching vehicle groups)
+- **Infeasible job exclusion** — jobs with zero feasible arcs are excluded from ProblemInstance (not just warned about) to prevent solver INFEASIBLE on the whole board
+- **Transit fallback** — missing transit data falls back to Haversine × conservative speed multiplier rather than failing the build
+- **Explicit cert lookup** — vehicle group → certification level mapping with no prefix-guessing; fail on unknown groups
+- **Arc pruning uses best-case timing** — `window_start_t` (not nominal time) to avoid over-pruning valid soft-window shifts
 
 **Bookings CSV parsing rules:**
 - Strip blank rows first (used as visual separators in the human spreadsheet, carry no meaning)
