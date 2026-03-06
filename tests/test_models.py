@@ -3,6 +3,10 @@ from datetime import date, time, datetime
 from scheduler.models import (
     CertLevel, ActionType, ChainType, Location,
     StorageLocation, Driver, Vehicle, Job,
+    DriverJobArc, VehicleJobArc, JobChainArc,
+    TransitPair, TransitMatrix, HorizonConfig,
+    ValidationIssue, ValidationReport,
+    ProblemInstance, BuildResult,
 )
 import pytest
 
@@ -133,3 +137,80 @@ def test_job_tba_vehicle():
         notes="",
     )
     assert j.vehicle_reg is None
+
+
+def test_driver_job_arc():
+    arc = DriverJobArc(driver_id="D001", job_id="J001", deadhead_minutes=45)
+    assert arc.deadhead_minutes == 45
+
+
+def test_vehicle_job_arc():
+    arc = VehicleJobArc(vehicle_reg="MK22EEA", job_id="J002", driving_minutes=30)
+    assert arc.driving_minutes == 30
+
+
+def test_job_chain_arc_driver_only():
+    arc = JobChainArc(
+        from_job_id="J001",
+        to_job_id="J003",
+        chain_type=ChainType.DRIVER_ONLY,
+        travel_minutes=25,
+        turnaround_minutes=0,
+    )
+    assert arc.turnaround_minutes == 0
+
+
+def test_job_chain_arc_vehicle_driver():
+    arc = JobChainArc(
+        from_job_id="J001",
+        to_job_id="J002",
+        chain_type=ChainType.VEHICLE_DRIVER,
+        travel_minutes=20,
+        turnaround_minutes=45,
+    )
+    assert arc.turnaround_minutes == 45
+
+
+def test_transit_matrix_get():
+    matrix = TransitMatrix(entries={
+        ("SW15 2SW", "TW14 9DF"): TransitPair(transit_minutes=55, driving_minutes=35),
+    })
+    loc_a = Location(postcode="SW15 2SW", lat=51.4576, lon=-0.2289)
+    loc_b = Location(postcode="TW14 9DF", lat=51.4502, lon=-0.4084)
+    pair = matrix.get(loc_a, loc_b)
+    assert pair is not None
+    assert pair.transit_minutes == 55
+    assert pair.driving_minutes == 35
+    assert matrix.get(loc_b, loc_a) is None
+
+
+def test_transit_matrix_self_loop():
+    """Same postcode should return zero-cost TransitPair without needing a dict entry."""
+    matrix = TransitMatrix(entries={})
+    loc = Location(postcode="SW15 2SW", lat=51.4576, lon=-0.2289)
+    pair = matrix.get(loc, loc)
+    assert pair is not None
+    assert pair.transit_minutes == 0
+    assert pair.driving_minutes == 0
+
+
+def test_horizon_config():
+    h = HorizonConfig(start_date=date(2025, 12, 8), num_days=5, t_max=7200)
+    assert h.t_max == 5 * 1440
+
+
+def test_validation_report_has_errors():
+    report_clean = ValidationReport(issues=[], stats={"total_jobs": 10})
+    assert not report_clean.has_errors
+
+    report_bad = ValidationReport(
+        issues=[ValidationIssue(severity="error", category="unknown_group", message="X", source_row=5)],
+        stats={"total_jobs": 10},
+    )
+    assert report_bad.has_errors
+
+
+def test_build_result_ok():
+    report = ValidationReport(issues=[], stats={})
+    result_none = BuildResult(instance=None, report=report)
+    assert not result_none.ok

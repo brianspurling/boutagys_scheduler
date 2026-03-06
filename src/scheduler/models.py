@@ -73,3 +73,81 @@ class Job(BaseModel, frozen=True):
     vehicle_group: str
     target_location: Location
     notes: str
+
+
+class DriverJobArc(BaseModel, frozen=True):
+    driver_id: str
+    job_id: str
+    deadhead_minutes: int
+
+
+class VehicleJobArc(BaseModel, frozen=True):
+    vehicle_reg: str
+    job_id: str
+    driving_minutes: int
+
+
+class JobChainArc(BaseModel, frozen=True):
+    from_job_id: str
+    to_job_id: str
+    chain_type: ChainType
+    travel_minutes: int
+    turnaround_minutes: int
+
+
+class TransitPair(BaseModel, frozen=True):
+    transit_minutes: int
+    driving_minutes: int
+
+
+class TransitMatrix(BaseModel, frozen=True):
+    entries: dict[tuple[str, str], TransitPair]
+
+    def get(self, from_loc: Location, to_loc: Location) -> TransitPair | None:
+        if from_loc.postcode == to_loc.postcode:
+            return TransitPair(transit_minutes=0, driving_minutes=0)
+        return self.entries.get((from_loc.postcode, to_loc.postcode))
+
+
+class HorizonConfig(BaseModel, frozen=True):
+    start_date: date
+    num_days: int
+    t_max: int
+
+
+class ValidationIssue(BaseModel, frozen=True):
+    severity: Literal["error", "warning", "excluded"]
+    category: str
+    message: str
+    source_row: int | None
+
+
+class ValidationReport(BaseModel, frozen=True):
+    issues: list[ValidationIssue]
+    stats: dict[str, int]
+
+    @property
+    def has_errors(self) -> bool:
+        return any(i.severity == "error" for i in self.issues)
+
+
+class ProblemInstance(BaseModel, frozen=True):
+    horizon: HorizonConfig
+    jobs: list[Job]
+    drivers: list[Driver]
+    vehicles: list[Vehicle]
+    storage_locations: list[StorageLocation]
+    vehicle_group_certs: dict[str, CertLevel]
+    transit_matrix: TransitMatrix
+    driver_job_arcs: list[DriverJobArc]
+    job_chain_arcs: list[JobChainArc]
+    vehicle_job_arcs: list[VehicleJobArc]
+
+
+class BuildResult(BaseModel):
+    instance: ProblemInstance | None
+    report: ValidationReport
+
+    @property
+    def ok(self) -> bool:
+        return self.instance is not None
