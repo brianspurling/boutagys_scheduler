@@ -420,6 +420,16 @@ def test_transit_matrix_get():
     assert matrix.get(loc_b, loc_a) is None  # Not symmetric unless both entries exist
 
 
+def test_transit_matrix_self_loop():
+    """Same postcode should return zero-cost TransitPair without needing a dict entry."""
+    matrix = TransitMatrix(entries={})
+    loc = Location(postcode="SW15 2SW", lat=51.4576, lon=-0.2289)
+    pair = matrix.get(loc, loc)
+    assert pair is not None
+    assert pair.transit_minutes == 0
+    assert pair.driving_minutes == 0
+
+
 def test_horizon_config():
     h = HorizonConfig(start_date=date(2025, 12, 8), num_days=5, t_max=7200)
     assert h.t_max == 5 * 1440
@@ -481,6 +491,8 @@ class TransitMatrix(BaseModel, frozen=True):
     entries: dict[tuple[str, str], TransitPair]
 
     def get(self, from_loc: Location, to_loc: Location) -> TransitPair | None:
+        if from_loc.postcode == to_loc.postcode:
+            return TransitPair(transit_minutes=0, driving_minutes=0)
         return self.entries.get((from_loc.postcode, to_loc.postcode))
 
 
@@ -1559,16 +1571,16 @@ class ProblemBuilder:
             )
 
         # Compute time offsets and windows
-        epoch = datetime.combine(self._horizon_start, datetime.min.time())
+        # DST-safe: use nominal days * 1440 + hour * 60 + minute (no timedelta math)
         enriched_jobs: list[Job] = []
         for j in valid_jobs:
             time_offset = None
             window_start = 0
             window_end = horizon.t_max
 
-            if j.scheduled_datetime is not None:
-                delta = j.scheduled_datetime - epoch
-                time_offset = int(delta.total_seconds() // 60)
+            if j.scheduled_date is not None and j.scheduled_time is not None:
+                days_from_start = (j.scheduled_date - self._horizon_start).days
+                time_offset = days_from_start * 1440 + j.scheduled_time.hour * 60 + j.scheduled_time.minute
                 window_start = max(0, time_offset - _WINDOW_BEFORE_MINUTES)
                 window_end = min(horizon.t_max, time_offset + _WINDOW_AFTER_MINUTES)
 
@@ -1780,7 +1792,7 @@ def test_vehicle_job_arc_group_mismatch():
 
 
 def test_vehicle_job_arc_only_tba_jobs():
-    """Jobs with assigned vehicle_reg should not generate vehicle arcs."""
+    """Jobs with assigned vehicle_reg must NOT generate vehicle arcs (memory bloat guard)."""
     vehicle = Vehicle(
         reg="MK22EEA", group="V3", current_location=LOC_B,
         available_from=date(2025, 12, 8), available_from_t=0,
@@ -1788,6 +1800,19 @@ def test_vehicle_job_arc_only_tba_jobs():
     job = _make_job("J001", ActionType.DELIVER, "V3", LOC_A, vehicle_reg="EXISTING")
     arcs = compute_vehicle_job_arcs([vehicle], [job], MATRIX)
     assert len(arcs) == 0
+
+
+def test_vehicle_job_arc_skips_non_tba_in_mixed_list():
+    """With a mix of TBA and non-TBA jobs, only TBA jobs get vehicle arcs."""
+    vehicle = Vehicle(
+        reg="MK22EEA", group="V3", current_location=LOC_B,
+        available_from=date(2025, 12, 8), available_from_t=0,
+    )
+    job_tba = _make_job("J001", ActionType.DELIVER, "V3", LOC_A, vehicle_reg=None)
+    job_assigned = _make_job("J002", ActionType.DELIVER, "V3", LOC_A, vehicle_reg="VAN456")
+    arcs = compute_vehicle_job_arcs([vehicle], [job_tba, job_assigned], MATRIX)
+    assert len(arcs) == 1
+    assert arcs[0].job_id == "J001"
 
 
 def test_job_chain_arc_driver_only():
@@ -1801,15 +1826,33 @@ def test_job_chain_arc_driver_only():
     assert arc.turnaround_minutes == 0
 
 
-def test_job_chain_arc_vehicle_driver():
-    """COLLECT V3 -> DELIVER V3 should generate a VEHICLE_DRIVER arc."""
-    job_a = _make_job("J001", ActionType.COLLECT, "V3", LOC_A, window_start=480, window_end=540)
-    job_b = _make_job("J002", ActionType.DELIVER, "V3", LOC_B, window_start=600, window_end=720)
+def test_job_chain_arc_vehicle_driver_tba():
+    """COLLECT V3 -> DELIVER V3 (TBA) should generate a VEHICLE_DRIVER arc."""
+    job_a = _make_job("J001", ActionType.COLLECT, "V3", LOC_A, window_start=480, window_end=540, vehicle_reg="VAN123")
+    job_b = _make_job("J002", ActionType.DELIVER, "V3", LOC_B, window_start=600, window_end=720, vehicle_reg=None)
     arcs = compute_job_chain_arcs([job_a, job_b], MATRIX)
     vd_arcs = [a for a in arcs if a.chain_type == ChainType.VEHICLE_DRIVER]
     assert len(vd_arcs) == 1
     assert vd_arcs[0].travel_minutes == 35  # driving_minutes
     assert vd_arcs[0].turnaround_minutes == 45
+
+
+def test_job_chain_arc_vehicle_driver_same_reg():
+    """COLLECT VAN123 -> DELIVER VAN123 should generate a VEHICLE_DRIVER arc."""
+    job_a = _make_job("J001", ActionType.COLLECT, "V3", LOC_A, window_start=480, window_end=540, vehicle_reg="VAN123")
+    job_b = _make_job("J002", ActionType.DELIVER, "V3", LOC_B, window_start=600, window_end=720, vehicle_reg="VAN123")
+    arcs = compute_job_chain_arcs([job_a, job_b], MATRIX)
+    vd_arcs = [a for a in arcs if a.chain_type == ChainType.VEHICLE_DRIVER]
+    assert len(vd_arcs) == 1
+
+
+def test_job_chain_arc_vehicle_driver_different_reg():
+    """COLLECT VAN123 -> DELIVER VAN456 should NOT generate a VEHICLE_DRIVER arc."""
+    job_a = _make_job("J001", ActionType.COLLECT, "V3", LOC_A, window_start=480, window_end=540, vehicle_reg="VAN123")
+    job_b = _make_job("J002", ActionType.DELIVER, "V3", LOC_B, window_start=600, window_end=720, vehicle_reg="VAN456")
+    arcs = compute_job_chain_arcs([job_a, job_b], MATRIX)
+    vd_arcs = [a for a in arcs if a.chain_type == ChainType.VEHICLE_DRIVER]
+    assert len(vd_arcs) == 0
 
 
 def test_job_chain_arc_vehicle_driver_group_mismatch():
@@ -1942,11 +1985,18 @@ def compute_job_chain_arcs(
                     turnaround_minutes=0,
                 ))
 
-            # VEHICLE_DRIVER arc: COLLECT -> DELIVER with matching groups
+            # VEHICLE_DRIVER arc: COLLECT -> DELIVER with matching groups and compatible regs
+            # If job_b has a specific vehicle_reg, it must match job_a's reg exactly.
+            # If job_b is TBA (vehicle_reg=None), any matching group is fine.
+            regs_compatible = (
+                job_b.vehicle_reg is None
+                or job_a.vehicle_reg == job_b.vehicle_reg
+            )
             if (
                 job_a.action == ActionType.COLLECT
                 and job_b.action == ActionType.DELIVER
                 and job_a.vehicle_group == job_b.vehicle_group
+                and regs_compatible
             ):
                 earliest_arrival_vd = (
                     job_a.window_start_t + _SERVICE_TIME
