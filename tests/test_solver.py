@@ -1,6 +1,7 @@
 """Unit tests for the CP-SAT solver using small synthetic ProblemInstance objects."""
 
 from datetime import date, time, datetime
+from pathlib import Path
 
 from scheduler.models import (
     ActionType, CertLevel, Driver, DriverJobArc, HorizonConfig, Job,
@@ -188,3 +189,32 @@ def test_solve_start_datetime_correct():
     a = result.assignments[0]
     assert a.start_time_t == 540
     assert a.start_datetime == datetime(2025, 12, 8, 9, 0)
+
+
+# --- Integration test ---
+
+def test_solve_real_sample_data():
+    """Integration: build from real CSVs and solve. Must find a feasible schedule."""
+    from scheduler.builder import ProblemBuilder
+
+    ROOT = Path(__file__).resolve().parent.parent
+    result = (
+        ProblemBuilder(horizon_start=date(2025, 12, 8), num_days=5)
+        .load_postcode_coords(ROOT / "ref-data" / "postcode_coords.csv")
+        .load_storage_locations(ROOT / "ref-data" / "storage_locations.csv")
+        .load_drivers(ROOT / "ref-data" / "drivers.csv")
+        .load_vehicles(ROOT / "ref-data" / "vehicle_inventory.csv")
+        .load_bookings(ROOT / "input" / "sample_bookings_data.csv")
+        .build()
+    )
+    assert result.ok
+    inst = result.instance
+
+    solver_result = solve(inst, timeout_seconds=60)
+    assert solver_result.status in ("OPTIMAL", "FEASIBLE"), (
+        f"Solver returned {solver_result.status} on sample data"
+    )
+    assert len(solver_result.assignments) == len(inst.jobs)
+    assigned_job_ids = {a.job_id for a in solver_result.assignments}
+    expected_job_ids = {j.job_id for j in inst.jobs}
+    assert assigned_job_ids == expected_job_ids
