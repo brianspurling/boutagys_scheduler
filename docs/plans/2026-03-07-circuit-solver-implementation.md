@@ -23,7 +23,7 @@
 | 5 | Solver — circuit constraints | `add_circuit` per driver, self-loops, job assignment |
 | 6 | Solver — temporal constraints | Time windows, arc travel time linking |
 | 7 | Solver — shift span & activation | Shift span limit, driver activation penalty |
-| 8 | Solver — TBA vehicle assignment | Depot-pickup vehicle selection for TBA delivers |
+| 8 | Solver — TBA vehicle assignment | Vehicle selection for TBA delivers |
 | 9 | Solver — objective function | Weighted cost minimisation |
 | 10 | Solver — solution extraction | Extract assignments and driver routes from circuit solution |
 | 11 | Integration | Wire into `run_solver.py`, full integration test |
@@ -37,7 +37,7 @@
 DEPOT_DWELL_MINUTES = 15
 TURNAROUND_MINUTES = 45
 
-# In solver.py (or a shared constants module)
+# In solver.py (or a shared constants module) (eventually we will calculate transit times using GMaps API)
 TRANSIT_WEIGHT = 3
 DRIVING_WEIGHT = 1
 ACTIVATION_PENALTY = 120
