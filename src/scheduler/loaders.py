@@ -206,7 +206,7 @@ def load_bookings(
                 ))
             if postcode is None:
                 issues.append(ValidationIssue(
-                    severity="error",
+                    severity="excluded",
                     category="missing_postcode",
                     message=f"Row {row_num}: no parseable postcode in '{postcode_raw}'",
                     source_row=row_num,
@@ -243,3 +243,14 @@ def load_bookings(
             ))
 
     return jobs, issues
+
+
+def load_postcode_coords(path: Path) -> dict[str, tuple[float, float]]:
+    """Load postcode_coords.csv into a postcode -> (lat, lon) lookup dict."""
+    coords: dict[str, tuple[float, float]] = {}
+    with open(path, newline="") as f:
+        for row in csv.DictReader(f):
+            postcode = row["postcode"].strip()
+            if postcode:
+                coords[postcode] = (float(row["lat"]), float(row["lon"]))
+    return coords
