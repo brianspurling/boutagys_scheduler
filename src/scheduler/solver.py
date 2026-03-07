@@ -29,6 +29,7 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
 
     model = cp_model.CpModel()
     jobs_by_id = {j.job_id: j for j in instance.jobs}
+    drivers_by_id = {d.driver_id: d for d in instance.drivers}
 
     # --- Index arcs ---
     # driver_id -> list of (job_id, deadhead_minutes, return_deadhead_minutes)
@@ -134,6 +135,47 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
             model.add(
                 start[driver_id, job_id] >= deadhead
             ).only_enforce_if([x[driver_id, job_id]])
+
+    # --- Constraint 5: driver shift span ---
+    is_working: dict[str, cp_model.IntVar] = {}
+    shift_start: dict[str, cp_model.IntVar] = {}
+    shift_end: dict[str, cp_model.IntVar] = {}
+
+    for driver_id, arc_list in driver_arcs.items():
+        driver = drivers_by_id[driver_id]
+        t_max = instance.horizon.t_max
+
+        is_w = model.new_bool_var(f"is_working_{driver_id}")
+        s_start = model.new_int_var(0, t_max, f"shift_start_{driver_id}")
+        s_end = model.new_int_var(0, t_max, f"shift_end_{driver_id}")
+        is_working[driver_id] = is_w
+        shift_start[driver_id] = s_start
+        shift_end[driver_id] = s_end
+
+        # Link is_working to assignments
+        all_x = [x[driver_id, job_id] for job_id, _, _ in arc_list]
+        model.add(sum(all_x) >= 1).only_enforce_if(is_w)
+        model.add(sum(all_x) == 0).only_enforce_if(is_w.negated())
+
+        # When not working: pin to zero
+        model.add(s_start == 0).only_enforce_if(is_w.negated())
+        model.add(s_end == 0).only_enforce_if(is_w.negated())
+
+        # When working: shift_start <= departure, shift_end >= return
+        for job_id, deadhead, return_dh in arc_list:
+            model.add(
+                s_start <= start[driver_id, job_id] - deadhead
+            ).only_enforce_if(x[driver_id, job_id])
+            model.add(
+                s_end >= start[driver_id, job_id] + _SERVICE_TIME + return_dh
+            ).only_enforce_if(x[driver_id, job_id])
+
+        # Shift span constraint: scale by num_days for multi-day horizons.
+        # In a multi-day horizon drivers can work across multiple days;
+        # per-day granularity will be tightened once overnight-stay
+        # modelling is in place.
+        span_limit = driver.max_hours_per_day * instance.horizon.num_days
+        model.add(s_end - s_start <= span_limit).only_enforce_if(is_w)
 
     # --- Solve ---
     solver = cp_model.CpSolver()

@@ -193,6 +193,84 @@ def test_solve_start_datetime_correct():
 
 # --- Integration test ---
 
+# --- Driver shift span ---
+
+def test_solve_shift_span_within_limit():
+    """One job, deadhead 30 + service 0 + return 30 = 60 min span.
+    Driver max_hours_per_day=600. FEASIBLE."""
+    d1 = _make_driver("D1")  # max_hours_per_day=600
+    j1 = _make_job("J1", LOC_B, window_start=480, window_end=540)
+    arcs = [DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30)]
+    result = solve(_make_instance([d1], [j1], arcs, []))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+
+
+def test_solve_shift_span_exceeds_limit():
+    """One job at LOC_B. Deadhead=30, return=30, job starts at 480.
+    Shift span = (480 + 0 + 30) - (480 - 30) = 60 min.
+    But if we set max_hours_per_day=50, the 60 min span exceeds it. INFEASIBLE."""
+    d1 = Driver(
+        driver_id="D1", name="D1", home_location=LOC_A,
+        branch="TEST", max_hours_per_day=50, certifications=CertLevel.VAN,
+        can_overnight=True, unavailable_dates=frozenset(),
+    )
+    j1 = _make_job("J1", LOC_B, window_start=480, window_end=540)
+    arcs = [DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30)]
+    result = solve(_make_instance([d1], [j1], arcs, []))
+    assert result.status == "INFEASIBLE"
+
+
+def test_solve_shift_span_two_jobs_feasible():
+    """Two jobs, same location. D1 leaves at (480-30)=450, returns at (660+0+30)=690.
+    Span=240 min. max_hours_per_day=600. FEASIBLE."""
+    d1 = _make_driver("D1")
+    j1 = _make_job("J1", LOC_B, window_start=480, window_end=540)
+    j2 = _make_job("J2", LOC_B, window_start=600, window_end=660)
+    arcs = [
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=30, return_deadhead_minutes=30),
+    ]
+    chains = [
+        JobChainArc(from_job_id="J1", to_job_id="J2", chain_type="driver_only",
+                    travel_minutes=0, turnaround_minutes=0),
+        JobChainArc(from_job_id="J2", to_job_id="J1", chain_type="driver_only",
+                    travel_minutes=0, turnaround_minutes=0),
+    ]
+    result = solve(_make_instance([d1], [j1, j2], arcs, chains))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 2
+
+
+def test_solve_shift_span_two_jobs_exceeds():
+    """Two jobs spread far apart in time. J1@480, J2@1200 (8pm).
+    Shift span: (1200 + 0 + 30) - (480 - 30) = 780 min.
+    max_hours_per_day=600. INFEASIBLE for one driver — but 2 drivers available."""
+    d1 = _make_driver("D1")
+    d2 = _make_driver("D2")
+    j1 = _make_job("J1", LOC_B, window_start=480, window_end=540)
+    j2 = _make_job("J2", LOC_B, window_start=1200, window_end=1260)
+    arcs = [
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D2", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D2", job_id="J2", deadhead_minutes=30, return_deadhead_minutes=30),
+    ]
+    chains = [
+        JobChainArc(from_job_id="J1", to_job_id="J2", chain_type="driver_only",
+                    travel_minutes=0, turnaround_minutes=0),
+        JobChainArc(from_job_id="J2", to_job_id="J1", chain_type="driver_only",
+                    travel_minutes=0, turnaround_minutes=0),
+    ]
+    result = solve(_make_instance([d1, d2], [j1, j2], arcs, chains))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 2
+    # Each driver should do exactly 1 job (can't combine due to shift limit)
+    drivers_used = {a.driver_id for a in result.assignments}
+    assert len(drivers_used) == 2
+
+
+# --- Integration test ---
+
 def test_solve_real_sample_data():
     """Integration: build from real CSVs and solve. Must find a feasible schedule."""
     from scheduler.builder import ProblemBuilder
