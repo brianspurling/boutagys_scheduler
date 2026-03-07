@@ -6,6 +6,7 @@ from pathlib import Path
 from scheduler.models import (
     ActionType, CertLevel, Driver, DriverJobArc, HorizonConfig, Job,
     JobChainArc, Location, ProblemInstance, TransitMatrix, TransitPair,
+    Vehicle, VehicleJobArc,
 )
 from scheduler.solver import solve
 
@@ -47,19 +48,37 @@ def _make_job(
     )
 
 
+def _make_tba_deliver(
+    job_id: str, loc: Location, group: str = "V3",
+    window_start: int = 480, window_end: int = 600,
+) -> Job:
+    return Job(
+        job_id=job_id, book_no=f"B{job_id}", order_ref="", rental_no="",
+        book_name="", book_status="",
+        action=ActionType.DELIVER, scheduled_date=date(2025, 12, 8),
+        scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
+        time_offset_minutes=540, window_start_t=window_start, window_end_t=window_end,
+        vehicle_reg=None, vehicle_group=group,
+        target_location=loc, notes="",
+    )
+
+
 def _make_instance(
     drivers: list[Driver],
     jobs: list[Job],
     driver_job_arcs: list[DriverJobArc],
     job_chain_arcs: list[JobChainArc] | None = None,
+    vehicles: list[Vehicle] | None = None,
+    vehicle_job_arcs: list[VehicleJobArc] | None = None,
 ) -> ProblemInstance:
     return ProblemInstance(
-        horizon=HORIZON, jobs=jobs, drivers=drivers, vehicles=[],
+        horizon=HORIZON, jobs=jobs, drivers=drivers,
+        vehicles=vehicles or [],
         storage_locations=[], vehicle_group_certs={},
         transit_matrix=MATRIX,
         driver_job_arcs=driver_job_arcs,
         job_chain_arcs=job_chain_arcs or [],
-        vehicle_job_arcs=[],
+        vehicle_job_arcs=vehicle_job_arcs or [],
     )
 
 
@@ -267,6 +286,87 @@ def test_solve_shift_span_two_jobs_exceeds():
     # Each driver should do exactly 1 job (can't combine due to shift limit)
     drivers_used = {a.driver_id for a in result.assignments}
     assert len(drivers_used) == 2
+
+
+# --- TBA vehicle assignment ---
+
+def test_solve_tba_depot_vehicle():
+    """TBA deliver job with a matching depot vehicle — FEASIBLE."""
+    d1 = _make_driver("D1")
+    j1 = _make_tba_deliver("J1", LOC_B)
+    v1 = Vehicle(reg="VAN1", group="V3", current_location=LOC_A,
+                 available_from=date(2025, 12, 8), available_from_t=0)
+    arcs = [DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30)]
+    v_arcs = [VehicleJobArc(vehicle_reg="VAN1", job_id="J1", driving_minutes=30, earliest_arrival_t=30)]
+    result = solve(_make_instance([d1], [j1], arcs, [], [v1], v_arcs))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 1
+
+
+def test_solve_tba_no_vehicle_infeasible():
+    """TBA deliver job with no depot vehicle and no chain — INFEASIBLE."""
+    d1 = _make_driver("D1")
+    j1 = _make_tba_deliver("J1", LOC_B)
+    arcs = [DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30)]
+    # No vehicles, no vehicle arcs, no VEHICLE_DRIVER chains
+    result = solve(_make_instance([d1], [j1], arcs, [], [], []))
+    assert result.status == "INFEASIBLE"
+
+
+def test_solve_tba_vehicle_driver_chain():
+    """TBA deliver served by VEHICLE_DRIVER chain from a collect — no depot vehicle needed."""
+    d1 = _make_driver("D1")
+    # Collect job (has a reg) at LOC_B
+    j_collect = Job(
+        job_id="JC", book_no="BC", order_ref="", rental_no="",
+        book_name="", book_status="",
+        action=ActionType.COLLECT, scheduled_date=date(2025, 12, 8),
+        scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
+        time_offset_minutes=540, window_start_t=480, window_end_t=540,
+        vehicle_reg="VAN1", vehicle_group="V3",
+        target_location=LOC_B, notes="",
+    )
+    # TBA deliver at LOC_C — same group, no reg
+    j_deliver = _make_tba_deliver("JD", LOC_C, group="V3", window_start=600, window_end=700)
+
+    arcs = [
+        DriverJobArc(driver_id="D1", job_id="JC", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="JD", deadhead_minutes=40, return_deadhead_minutes=40),
+    ]
+    chains = [
+        # DRIVER_ONLY arc (for Constraint 3 sequencing)
+        JobChainArc(from_job_id="JC", to_job_id="JD", chain_type="driver_only",
+                    travel_minutes=50, turnaround_minutes=0),
+        # VEHICLE_DRIVER arc: collect VAN1 at LOC_B, deliver at LOC_C
+        JobChainArc(from_job_id="JC", to_job_id="JD", chain_type="vehicle_driver",
+                    travel_minutes=30, turnaround_minutes=45),
+    ]
+    # No depot vehicles — the van comes from the collect chain
+    result = solve(_make_instance([d1], [j_collect, j_deliver], arcs, chains, [], []))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 2
+
+
+def test_solve_tba_depot_vehicle_one_each():
+    """Two TBA jobs, one depot vehicle — one must get vehicle, other needs a chain.
+    Without a chain for the second, INFEASIBLE."""
+    d1 = _make_driver("D1")
+    d2 = _make_driver("D2")
+    j1 = _make_tba_deliver("J1", LOC_B, window_start=480, window_end=540)
+    j2 = _make_tba_deliver("J2", LOC_C, window_start=480, window_end=540)
+    v1 = Vehicle(reg="VAN1", group="V3", current_location=LOC_A,
+                 available_from=date(2025, 12, 8), available_from_t=0)
+    arcs = [
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40, return_deadhead_minutes=40),
+        DriverJobArc(driver_id="D2", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D2", job_id="J2", deadhead_minutes=40, return_deadhead_minutes=40),
+    ]
+    # Only one depot vehicle, for J1 only
+    v_arcs = [VehicleJobArc(vehicle_reg="VAN1", job_id="J1", driving_minutes=30, earliest_arrival_t=30)]
+    # No chains — J2 has no van source. INFEASIBLE.
+    result = solve(_make_instance([d1, d2], [j1, j2], arcs, [], [v1], v_arcs))
+    assert result.status == "INFEASIBLE"
 
 
 # --- Integration test ---

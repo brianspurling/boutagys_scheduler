@@ -42,6 +42,13 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
     for arc in instance.driver_job_arcs:
         job_drivers[arc.job_id].append(arc.driver_id)
 
+    # VEHICLE_DRIVER chain index: built BEFORE min-time consolidation
+    # which loses chain_type info
+    vd_pairs: set[tuple[str, str]] = set()
+    for arc in instance.job_chain_arcs:
+        if arc.chain_type == "vehicle_driver":
+            vd_pairs.add((arc.from_job_id, arc.to_job_id))
+
     # Min-Time Arc Consolidation: for each directed pair, take the fastest
     # option across both chain types. DRIVER_ONLY uses transit_minutes
     # (turnaround is 0); VEHICLE_DRIVER uses driving_minutes + turnaround.
@@ -88,6 +95,8 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
         if len(driver_intervals) > 1:
             model.add_no_overlap(driver_intervals)
 
+    seq_vars: dict[tuple[str, str, str], cp_model.IntVar] = {}
+
     # --- Constraint 3: physical travel between jobs (3 cases) ---
     for driver_id, arc_list in driver_arcs.items():
         job_ids = [job_id for job_id, _, _ in arc_list]
@@ -122,6 +131,7 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
                     travel_ij = chain_lookup[(ji, jj)]
                     travel_ji = chain_lookup[(jj, ji)]
                     seq = model.new_bool_var(f"seq_{driver_id}_{ji}_{jj}")
+                    seq_vars[driver_id, ji, jj] = seq
                     model.add(
                         start[driver_id, jj] >= start[driver_id, ji] + _SERVICE_TIME + travel_ij
                     ).only_enforce_if([x[driver_id, ji], x[driver_id, jj], seq])
@@ -176,6 +186,87 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
         # modelling is in place.
         span_limit = driver.max_hours_per_day * instance.horizon.num_days
         model.add(s_end - s_start <= span_limit).only_enforce_if(is_w)
+
+    # --- Constraint 6: TBA vehicle assignment ---
+    tba_job_ids = {j.job_id for j in instance.jobs if j.vehicle_reg is None}
+
+    # y[vehicle_reg, job_id] = BoolVar: depot vehicle assignment
+    y: dict[tuple[str, str], cp_model.IntVar] = {}
+    # vd_active[driver_id, from_job_id, to_job_id] = BoolVar
+    vd_active: dict[tuple[str, str, str], cp_model.IntVar] = {}
+
+    # Create y variables for depot vehicle -> TBA job arcs
+    for arc in instance.vehicle_job_arcs:
+        y_var = model.new_bool_var(f"y_{arc.vehicle_reg}_{arc.job_id}")
+        y[arc.vehicle_reg, arc.job_id] = y_var
+
+    # Create vd_active variables for VEHICLE_DRIVER chains into TBA jobs
+    for (ji, jj) in vd_pairs:
+        if jj not in tba_job_ids:
+            continue
+        # For each driver that can do both jobs
+        drivers_for_i = set(job_drivers.get(ji, []))
+        drivers_for_j = set(job_drivers.get(jj, []))
+        common_drivers = drivers_for_i & drivers_for_j
+
+        for driver_id in common_drivers:
+            vda = model.new_bool_var(f"vd_active_{driver_id}_{ji}_{jj}")
+            vd_active[driver_id, ji, jj] = vda
+
+            has_i_to_j = (ji, jj) in chain_lookup
+            has_j_to_i = (jj, ji) in chain_lookup
+
+            if has_i_to_j and not has_j_to_i:
+                # Strict order: vd_active iff both assigned to same driver
+                model.add_bool_and([x[driver_id, ji], x[driver_id, jj]]).only_enforce_if(vda)
+                model.add_bool_or([x[driver_id, ji].negated(), x[driver_id, jj].negated()]).only_enforce_if(vda.negated())
+            elif has_i_to_j and has_j_to_i:
+                # Disjunctive: vd_active iff both assigned AND i-before-j
+                # Look up seq var — key is (driver_id, ji, jj) or (driver_id, jj, ji)
+                if (driver_id, ji, jj) in seq_vars:
+                    seq_v = seq_vars[driver_id, ji, jj]
+                    model.add_bool_and([x[driver_id, ji], x[driver_id, jj], seq_v]).only_enforce_if(vda)
+                    model.add_bool_or([x[driver_id, ji].negated(), x[driver_id, jj].negated(), seq_v.negated()]).only_enforce_if(vda.negated())
+                elif (driver_id, jj, ji) in seq_vars:
+                    seq_v = seq_vars[driver_id, jj, ji]
+                    # seq_v=1 means jj-before-ji, so negated means ji-before-jj
+                    model.add_bool_and([x[driver_id, ji], x[driver_id, jj], seq_v.negated()]).only_enforce_if(vda)
+                    model.add_bool_or([x[driver_id, ji].negated(), x[driver_id, jj].negated(), seq_v]).only_enforce_if(vda.negated())
+
+    # Rule 1: exactly one van source per TBA job
+    for job_id in tba_job_ids:
+        van_sources = []
+        # Depot vehicles
+        for (v_reg, j_id) in y:
+            if j_id == job_id:
+                van_sources.append(y[v_reg, j_id])
+        # VEHICLE_DRIVER chains
+        for (di, ji, jj) in vd_active:
+            if jj == job_id:
+                van_sources.append(vd_active[di, ji, jj])
+        if van_sources:
+            model.add_exactly_one(van_sources)
+        else:
+            # No van source at all — force infeasible
+            false_var = model.new_bool_var(f"infeasible_{job_id}")
+            model.add(false_var == 1)
+            model.add(false_var == 0)
+
+    # Rule 2: each depot vehicle assigned to at most one TBA job
+    from collections import defaultdict as _dd
+    vehicle_assignments: dict[str, list] = _dd(list)
+    for (v_reg, j_id) in y:
+        vehicle_assignments[v_reg].append(y[v_reg, j_id])
+    for v_reg, assigned in vehicle_assignments.items():
+        if len(assigned) > 1:
+            model.add(sum(assigned) <= 1)
+
+    # Rule 3: temporal link — depot vehicle must arrive before job starts
+    for arc in instance.vehicle_job_arcs:
+        for d_id in job_drivers.get(arc.job_id, []):
+            model.add(
+                start[d_id, arc.job_id] >= arc.earliest_arrival_t
+            ).only_enforce_if([y[arc.vehicle_reg, arc.job_id], x[d_id, arc.job_id]])
 
     # --- Solve ---
     solver = cp_model.CpSolver()
