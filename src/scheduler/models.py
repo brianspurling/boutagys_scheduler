@@ -79,12 +79,14 @@ class DriverJobArc(BaseModel, frozen=True):
     driver_id: str
     job_id: str
     deadhead_minutes: int
+    return_deadhead_minutes: int
 
 
 class VehicleJobArc(BaseModel, frozen=True):
     vehicle_reg: str
     job_id: str
     driving_minutes: int
+    earliest_arrival_t: int
 
 
 class JobChainArc(BaseModel, frozen=True):

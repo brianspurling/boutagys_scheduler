@@ -141,13 +141,15 @@ def test_job_tba_vehicle():
 
 
 def test_driver_job_arc():
-    arc = DriverJobArc(driver_id="D001", job_id="J001", deadhead_minutes=45)
+    arc = DriverJobArc(driver_id="D001", job_id="J001", deadhead_minutes=45, return_deadhead_minutes=45)
     assert arc.deadhead_minutes == 45
+    assert arc.return_deadhead_minutes == 45
 
 
 def test_vehicle_job_arc():
-    arc = VehicleJobArc(vehicle_reg="MK22EEA", job_id="J002", driving_minutes=30)
+    arc = VehicleJobArc(vehicle_reg="MK22EEA", job_id="J002", driving_minutes=30, earliest_arrival_t=30)
     assert arc.driving_minutes == 30
+    assert arc.earliest_arrival_t == 30
 
 
 def test_job_chain_arc_driver_only():

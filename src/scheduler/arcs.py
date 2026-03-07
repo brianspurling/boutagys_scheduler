@@ -30,10 +30,13 @@ def compute_driver_job_arcs(
             deadhead = pair.transit_minutes
             if deadhead > job.window_end_t:
                 continue
+            return_pair = transit_matrix.get(job.target_location, driver.home_location)
+            return_deadhead = return_pair.transit_minutes if return_pair else 0
             arcs.append(DriverJobArc(
                 driver_id=driver.driver_id,
                 job_id=job.job_id,
                 deadhead_minutes=deadhead,
+                return_deadhead_minutes=return_deadhead,
             ))
     return arcs
 
@@ -60,6 +63,7 @@ def compute_vehicle_job_arcs(
                 vehicle_reg=vehicle.reg,
                 job_id=job.job_id,
                 driving_minutes=driving,
+                earliest_arrival_t=vehicle.available_from_t + driving,
             ))
     return arcs
 

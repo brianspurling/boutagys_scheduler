@@ -71,8 +71,8 @@ def test_solve_basic_feasible():
     j1 = _make_job("J1", LOC_B, window_start=480, window_end=540)
     j2 = _make_job("J2", LOC_B, window_start=600, window_end=660)
     arcs = [
-        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30),
-        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=30, return_deadhead_minutes=30),
     ]
     chains = [
         JobChainArc(from_job_id="J1", to_job_id="J2", chain_type="driver_only",
@@ -93,10 +93,10 @@ def test_solve_multi_driver():
     j1 = _make_job("J1", LOC_B, window_start=480, window_end=540)
     j2 = _make_job("J2", LOC_C, window_start=480, window_end=540)
     arcs = [
-        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30),
-        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40),
-        DriverJobArc(driver_id="D2", job_id="J1", deadhead_minutes=0),
-        DriverJobArc(driver_id="D2", job_id="J2", deadhead_minutes=50),
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40, return_deadhead_minutes=40),
+        DriverJobArc(driver_id="D2", job_id="J1", deadhead_minutes=0, return_deadhead_minutes=0),
+        DriverJobArc(driver_id="D2", job_id="J2", deadhead_minutes=50, return_deadhead_minutes=50),
     ]
     # No chain arcs — mutual exclusion per driver. Each driver can do at most 1.
     # With 2 jobs and 2 drivers, this is FEASIBLE.
@@ -116,8 +116,8 @@ def test_solve_mutual_exclusion_no_chain_arc():
     j1 = _make_job("J1", LOC_B, window_start=480, window_end=540)
     j2 = _make_job("J2", LOC_C, window_start=480, window_end=540)
     arcs = [
-        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30),
-        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40),
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40, return_deadhead_minutes=40),
     ]
     result = solve(_make_instance([d1], [j1, j2], arcs, job_chain_arcs=[]))
     assert result.status == "INFEASIBLE"
@@ -129,7 +129,7 @@ def test_solve_deadhead_too_late():
     d1 = _make_driver("D1")
     j1 = _make_job("J1", LOC_B, window_start=480, window_end=490)
     arcs = [
-        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=500),
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=500, return_deadhead_minutes=30),
     ]
     result = solve(_make_instance([d1], [j1], arcs))
     assert result.status == "INFEASIBLE"
@@ -141,8 +141,8 @@ def test_solve_strict_order_enforced():
     j1 = _make_job("J1", LOC_B, window_start=480, window_end=490)
     j2 = _make_job("J2", LOC_C, window_start=480, window_end=490)
     arcs = [
-        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30),
-        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40),
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40, return_deadhead_minutes=40),
     ]
     chains = [
         JobChainArc(from_job_id="J1", to_job_id="J2", chain_type="driver_only",
@@ -160,8 +160,8 @@ def test_solve_disjunctive_sequence():
     j1 = _make_job("J1", LOC_B, window_start=480, window_end=700)
     j2 = _make_job("J2", LOC_C, window_start=480, window_end=700)
     arcs = [
-        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30),
-        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40),
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40, return_deadhead_minutes=40),
     ]
     chains = [
         JobChainArc(from_job_id="J1", to_job_id="J2", chain_type="driver_only",
@@ -183,7 +183,7 @@ def test_solve_start_datetime_correct():
     """Verify start_datetime is correctly derived from start_time_t and horizon."""
     d1 = _make_driver("D1")
     j1 = _make_job("J1", LOC_B, window_start=540, window_end=540)  # Exactly 09:00
-    arcs = [DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=0)]
+    arcs = [DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=0, return_deadhead_minutes=30)]
     result = solve(_make_instance([d1], [j1], arcs, []))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     a = result.assignments[0]
