@@ -12,12 +12,12 @@
 
 ---
 
-## Task 1: Add `return_deadhead_minutes` to DriverJobArc model
+## Task 1: Add `return_deadhead_minutes` to DriverJobArc and `earliest_arrival_t` to VehicleJobArc
 
 **Files:**
-- Modify: `src/scheduler/models.py:78-81`
+- Modify: `src/scheduler/models.py:78-81` and `src/scheduler/models.py:84-87`
 
-**Step 1: Update the model**
+**Step 1: Update the models**
 
 In `src/scheduler/models.py`, change `DriverJobArc` from:
 
@@ -36,6 +36,67 @@ class DriverJobArc(BaseModel, frozen=True):
     job_id: str
     deadhead_minutes: int
     return_deadhead_minutes: int
+```
+
+Also change `VehicleJobArc` from:
+
+```python
+class VehicleJobArc(BaseModel, frozen=True):
+    vehicle_reg: str
+    job_id: str
+    driving_minutes: int
+```
+
+to:
+
+```python
+class VehicleJobArc(BaseModel, frozen=True):
+    vehicle_reg: str
+    job_id: str
+    driving_minutes: int
+    earliest_arrival_t: int
+```
+
+**Step 1b: Fix arcs.py — populate earliest_arrival_t**
+
+In `src/scheduler/arcs.py`, update `compute_vehicle_job_arcs` to compute and
+store the earliest arrival time. Change lines 59-63 from:
+
+```python
+            arcs.append(VehicleJobArc(
+                vehicle_reg=vehicle.reg,
+                job_id=job.job_id,
+                driving_minutes=driving,
+            ))
+```
+
+to:
+
+```python
+            arcs.append(VehicleJobArc(
+                vehicle_reg=vehicle.reg,
+                job_id=job.job_id,
+                driving_minutes=driving,
+                earliest_arrival_t=vehicle.available_from_t + driving,
+            ))
+```
+
+**Step 1c: Fix test_models.py VehicleJobArc test**
+
+In `tests/test_models.py`, update the `test_vehicle_job_arc` test (line ~148-149):
+
+```python
+arc = VehicleJobArc(vehicle_reg="MK22EEA", job_id="J002", driving_minutes=30, earliest_arrival_t=30)
+```
+
+**Step 1d: Fix test_arcs.py VehicleJobArc assertions**
+
+In `tests/test_arcs.py`, the `test_vehicle_job_arc_basic` test asserts
+`arcs[0].driving_minutes == 35`. Add an assertion for `earliest_arrival_t`.
+The vehicle has `available_from_t=0`, so `earliest_arrival_t = 0 + 35 = 35`:
+
+```python
+    assert arcs[0].earliest_arrival_t == 35
 ```
 
 **Step 2: Run tests to see what breaks**
@@ -481,7 +542,7 @@ def test_solve_tba_depot_vehicle():
     v1 = Vehicle(reg="VAN1", group="V3", current_location=LOC_A,
                  available_from=date(2025, 12, 8), available_from_t=0)
     arcs = [DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30)]
-    v_arcs = [VehicleJobArc(vehicle_reg="VAN1", job_id="J1", driving_minutes=30)]
+    v_arcs = [VehicleJobArc(vehicle_reg="VAN1", job_id="J1", driving_minutes=30, earliest_arrival_t=30)]
     result = solve(_make_instance([d1], [j1], arcs, [], [v1], v_arcs))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 1
@@ -547,7 +608,7 @@ def test_solve_tba_depot_vehicle_one_each():
         DriverJobArc(driver_id="D2", job_id="J2", deadhead_minutes=40, return_deadhead_minutes=40),
     ]
     # Only one depot vehicle, for J1 only
-    v_arcs = [VehicleJobArc(vehicle_reg="VAN1", job_id="J1", driving_minutes=30)]
+    v_arcs = [VehicleJobArc(vehicle_reg="VAN1", job_id="J1", driving_minutes=30, earliest_arrival_t=30)]
     # No chains — J2 has no van source. INFEASIBLE.
     result = solve(_make_instance([d1, d2], [j1, j2], arcs, [], [v1], v_arcs))
     assert result.status == "INFEASIBLE"
@@ -704,13 +765,11 @@ After the Constraint 5 block, add:
         if len(assigned) > 1:
             model.add(sum(assigned) <= 1)
 
-    # Rule 3: temporal link — depot vehicle arrival time
+    # Rule 3: temporal link — depot vehicle arrival time (pre-computed on arc)
     for arc in instance.vehicle_job_arcs:
-        vehicle = vehicles_by_reg[arc.vehicle_reg]
-        earliest = vehicle.available_from_t + arc.driving_minutes
         for d_id in job_drivers.get(arc.job_id, []):
             model.add(
-                start[d_id, arc.job_id] >= earliest
+                start[d_id, arc.job_id] >= arc.earliest_arrival_t
             ).only_enforce_if([y[arc.vehicle_reg, arc.job_id], x[d_id, arc.job_id]])
 
     # TODO: Dynamic Driver->Van->Customer routing for TBA jobs

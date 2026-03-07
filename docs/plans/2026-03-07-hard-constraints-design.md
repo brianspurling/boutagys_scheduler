@@ -152,11 +152,27 @@ For each vehicle v:
     sum(y[v, j] for all TBA jobs j) <= 1
 ```
 
+### Model change: VehicleJobArc gains earliest_arrival_t
+
+```python
+class VehicleJobArc(BaseModel, frozen=True):
+    vehicle_reg: str
+    job_id: str
+    driving_minutes: int
+    earliest_arrival_t: int   # NEW: vehicle.available_from_t + driving_minutes
+```
+
+Pre-computed in `compute_vehicle_job_arcs()` so the solver never looks up
+vehicle objects:
+```python
+earliest = vehicle.available_from_t + driving
+```
+
 ### Rule 3: Temporal link — depot vehicle must arrive before job starts
 
 ```
 For each VehicleJobArc(v, j), for each driver d feasible for j:
-    start[d, j] >= vehicle.available_from_t + arc.driving_minutes
+    start[d, j] >= arc.earliest_arrival_t
         .only_enforce_if([y[v, j], x[d, j]])
 ```
 
@@ -185,8 +201,8 @@ two-leg routing is deferred to a future ticket.
 
 ## Files changed
 
-- `src/scheduler/models.py` — add `return_deadhead_minutes` to `DriverJobArc`
-- `src/scheduler/arcs.py` — populate `return_deadhead_minutes`
+- `src/scheduler/models.py` — add `return_deadhead_minutes` to `DriverJobArc`, add `earliest_arrival_t` to `VehicleJobArc`
+- `src/scheduler/arcs.py` — populate `return_deadhead_minutes` and `earliest_arrival_t`
 - `src/scheduler/solver.py` — add Constraint 5 (shift span) and Constraint 6 (TBA vehicles)
 - `tests/test_solver.py` — new tests for both constraints
 - `tests/test_arcs.py` — update existing tests for new field
