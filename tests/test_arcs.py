@@ -54,6 +54,7 @@ def test_driver_job_arc_basic():
     arcs = compute_driver_job_arcs([driver], [job], MATRIX, VEHICLE_GROUP_CERTS)
     assert len(arcs) == 1
     assert arcs[0].deadhead_minutes == 55
+    assert arcs[0].return_deadhead_minutes == 55
 
 
 def test_driver_job_arc_cert_mismatch():
@@ -90,6 +91,7 @@ def test_vehicle_job_arc_basic():
     arcs = compute_vehicle_job_arcs([vehicle], [job], MATRIX)
     assert len(arcs) == 1
     assert arcs[0].driving_minutes == 35
+    assert arcs[0].earliest_arrival_t == 35
 
 
 def test_vehicle_job_arc_group_mismatch():
