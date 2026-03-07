@@ -36,6 +36,13 @@ For each driver d:
 
 ### Constraint 3: Physical travel between jobs (three cases)
 
+**Min-Time Arc Consolidation:** Before evaluating the three cases, consolidate
+all `JobChainArc` entries for each directed pair `(i, j)` into a single minimum
+effective travel time. `DRIVER_ONLY` arcs use `travel_minutes` (turnaround is 0);
+`VEHICLE_DRIVER` arcs use `travel_minutes + turnaround_minutes`. If both exist for
+the same pair, take the minimum. This gives the solver the true physical lower-bound
+and prevents false infeasibilities where driving is faster than public transit.
+
 For each driver `d`, for each unordered pair `{i, j}` both feasible for `d`:
 
 **Case 1 — No arc in either direction.** Mutual exclusion:

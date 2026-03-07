@@ -324,11 +324,16 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
     for arc in instance.driver_job_arcs:
         job_drivers[arc.job_id].append(arc.driver_id)
 
-    # Chain arc lookup: (from_job_id, to_job_id) -> JobChainArc (DRIVER_ONLY only)
+    # Chain arc lookup: (from_job_id, to_job_id) -> min effective travel minutes
+    # Min-Time Arc Consolidation: for each directed pair, take the fastest
+    # option across both chain types. DRIVER_ONLY uses transit_minutes;
+    # VEHICLE_DRIVER uses driving_minutes + turnaround_minutes.
     chain_lookup: dict[tuple[str, str], int] = {}
     for arc in instance.job_chain_arcs:
-        if arc.chain_type == ChainType.DRIVER_ONLY:
-            chain_lookup[(arc.from_job_id, arc.to_job_id)] = arc.travel_minutes
+        key = (arc.from_job_id, arc.to_job_id)
+        effective_time = arc.travel_minutes + arc.turnaround_minutes
+        if key not in chain_lookup or effective_time < chain_lookup[key]:
+            chain_lookup[key] = effective_time
 
     # --- Variables ---
     # x[driver_id, job_id] = BoolVar: assignment
