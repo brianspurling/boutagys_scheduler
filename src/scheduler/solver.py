@@ -31,10 +31,10 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
     jobs_by_id = {j.job_id: j for j in instance.jobs}
 
     # --- Index arcs ---
-    # driver_id -> list of (job_id, deadhead_minutes)
-    driver_arcs: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    # driver_id -> list of (job_id, deadhead_minutes, return_deadhead_minutes)
+    driver_arcs: dict[str, list[tuple[str, int, int]]] = defaultdict(list)
     for arc in instance.driver_job_arcs:
-        driver_arcs[arc.driver_id].append((arc.job_id, arc.deadhead_minutes))
+        driver_arcs[arc.driver_id].append((arc.job_id, arc.deadhead_minutes, arc.return_deadhead_minutes))
 
     # job_id -> list of driver_ids that can serve it
     job_drivers: dict[str, list[str]] = defaultdict(list)
@@ -60,7 +60,7 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
     intervals: dict[str, list[cp_model.IntervalVar]] = defaultdict(list)
 
     for driver_id, arc_list in driver_arcs.items():
-        for job_id, deadhead in arc_list:
+        for job_id, deadhead, return_dh in arc_list:
             job = jobs_by_id[job_id]
             x_var = model.new_bool_var(f"x_{driver_id}_{job_id}")
             x[driver_id, job_id] = x_var
@@ -89,7 +89,7 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
 
     # --- Constraint 3: physical travel between jobs (3 cases) ---
     for driver_id, arc_list in driver_arcs.items():
-        job_ids = [job_id for job_id, _ in arc_list]
+        job_ids = [job_id for job_id, _, _ in arc_list]
         for idx_a in range(len(job_ids)):
             for idx_b in range(idx_a + 1, len(job_ids)):
                 ji = job_ids[idx_a]
@@ -130,7 +130,7 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
 
     # --- Constraint 4: deadhead from home ---
     for driver_id, arc_list in driver_arcs.items():
-        for job_id, deadhead in arc_list:
+        for job_id, deadhead, return_dh in arc_list:
             model.add(
                 start[driver_id, job_id] >= deadhead
             ).only_enforce_if([x[driver_id, job_id]])
