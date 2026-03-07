@@ -151,3 +151,17 @@ class BuildResult(BaseModel):
     @property
     def ok(self) -> bool:
         return self.instance is not None
+
+
+class JobAssignment(BaseModel, frozen=True):
+    job_id: str
+    driver_id: str
+    start_time_t: int
+    start_datetime: datetime
+
+
+class SolverResult(BaseModel, frozen=True):
+    status: str
+    solve_time_seconds: float
+    assignments: list[JobAssignment]
+    stats: dict[str, int]

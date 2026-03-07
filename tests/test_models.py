@@ -7,6 +7,7 @@ from scheduler.models import (
     TransitPair, TransitMatrix, HorizonConfig,
     ValidationIssue, ValidationReport,
     ProblemInstance, BuildResult,
+    JobAssignment, SolverResult,
 )
 import pytest
 
@@ -214,3 +215,34 @@ def test_build_result_ok():
     report = ValidationReport(issues=[], stats={})
     result_none = BuildResult(instance=None, report=report)
     assert not result_none.ok
+
+
+def test_job_assignment():
+    a = JobAssignment(
+        job_id="J001", driver_id="D001", start_time_t=540,
+        start_datetime=datetime(2025, 12, 8, 9, 0),
+    )
+    assert a.job_id == "J001"
+    assert a.start_time_t == 540
+    assert a.start_datetime == datetime(2025, 12, 8, 9, 0)
+
+
+def test_solver_result_feasible():
+    r = SolverResult(
+        status="FEASIBLE", solve_time_seconds=1.23,
+        assignments=[
+            JobAssignment(job_id="J001", driver_id="D001", start_time_t=540,
+                          start_datetime=datetime(2025, 12, 8, 9, 0)),
+        ],
+        stats={"variables": 100, "constraints": 50},
+    )
+    assert r.status == "FEASIBLE"
+    assert len(r.assignments) == 1
+
+
+def test_solver_result_infeasible():
+    r = SolverResult(
+        status="INFEASIBLE", solve_time_seconds=0.5,
+        assignments=[], stats={},
+    )
+    assert r.assignments == []
