@@ -53,6 +53,12 @@ tests/          # Test code
     - Total Arc Cost (The "Tolls" from Step 2).
     - Driver Activation Penalty (A massive cost added to the first arc leaving Home, forcing the solver to use fewer drivers)
 
+4. Output
+
+  - Data outputs (CSV, JSON formats, as needed)
+  - HTML report built on top of data output, to visualise schedule
+
+
 ---
 
 ## Data Sources
@@ -108,4 +114,5 @@ To be formally defined in the scoring stage, but the high-level targets are:
 - Strip postcode suffixes: remove everything after the first space-separated postcode token (e.g. `BH23 5LJ*PRE-DELIVERY*` → `BH23 5LJ`, `B92 0AE - EXT BEFORE` → `B92 0AE`)
 - `Supp'd Grp` may contain upgrade notation with `>` (e.g. `E.A17>D.B9A`): take the second (rightmost) value as the operative vehicle group
 - Job notes are descoped for now — store as a raw string, do not parse for structured constraints
+
 
