@@ -6,7 +6,7 @@ from pathlib import Path
 
 from scheduler.builder import ProblemBuilder
 from scheduler.solver import solve
-from scheduler.exporter import print_schedule, export_csv
+from scheduler.exporter import print_schedule, export_csv, export_json
 
 ROOT = Path(__file__).resolve().parent
 REF = ROOT / "ref-data"
@@ -51,6 +51,9 @@ def main():
         output_path = OUTPUT / "schedule.csv"
         export_csv(solver_result, inst, INPUT / "sample_bookings_data.csv", output_path)
         print(f"\nCSV exported to: {output_path}")
+        json_path = OUTPUT / "schedule.json"
+        export_json(solver_result, inst, json_path)
+        print(f"JSON exported to: {json_path}")
 
 
 if __name__ == "__main__":

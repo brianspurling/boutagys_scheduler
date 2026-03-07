@@ -162,8 +162,33 @@ class JobAssignment(BaseModel, frozen=True):
     start_datetime: datetime
 
 
+class RouteLeg(BaseModel, frozen=True):
+    """One travel leg in a driver's day: from one location to the next."""
+    from_postcode: str
+    to_postcode: str
+    mode: Literal["transit", "driving"]
+    duration_minutes: int | None  # None = unknown (not yet computed)
+    # Present when mode="driving" and leg comes from a depot vehicle pickup
+    via_depot_postcode: str | None = None
+    via_depot_transit_minutes: int | None = None
+    via_depot_driving_minutes: int | None = None
+    # Booking reference for the job at the destination (if any)
+    job_id: str | None = None
+    vehicle_reg: str | None = None
+
+
+class DriverRoute(BaseModel, frozen=True):
+    """Full route for one driver on one day."""
+    driver_id: str
+    driver_name: str
+    home_postcode: str
+    legs: list[RouteLeg]
+    deadhead_minutes_total: int
+
+
 class SolverResult(BaseModel, frozen=True):
     status: str
     solve_time_seconds: float
     assignments: list[JobAssignment]
+    driver_routes: list[DriverRoute]
     stats: dict[str, int]

@@ -9,7 +9,8 @@ from datetime import datetime, time, timedelta
 from ortools.sat.python import cp_model
 
 from scheduler.models import (
-    HorizonConfig, JobAssignment, ProblemInstance, SolverResult,
+    ChainType, DriverRoute, HorizonConfig, JobAssignment,
+    ProblemInstance, RouteLeg, SolverResult,
 )
 
 _SERVICE_TIME = 0
@@ -283,6 +284,9 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
 
     # --- Extract solution ---
     assignments: list[JobAssignment] = []
+    # which depot vehicle was assigned to each TBA job
+    tba_vehicle_assigned: dict[str, str] = {}  # job_id -> vehicle_reg
+
     if status in ("OPTIMAL", "FEASIBLE"):
         for (driver_id, job_id), x_var in x.items():
             if solver.value(x_var):
@@ -294,14 +298,192 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
                     start_datetime=_t_to_datetime(start_t, instance.horizon),
                 ))
 
+        for (v_reg, job_id), y_var in y.items():
+            if solver.value(y_var):
+                tba_vehicle_assigned[job_id] = v_reg
+
+    # --- Build driver routes ---
+    driver_routes = _build_driver_routes(
+        assignments, instance, driver_arcs, chain_lookup, vd_pairs,
+        tba_vehicle_assigned,
+    )
+
     elapsed = time_mod.monotonic() - start_wall
 
     return SolverResult(
         status=status,
         solve_time_seconds=round(elapsed, 3),
         assignments=assignments,
+        driver_routes=driver_routes,
         stats={
             "variables": len(x),
             "constraints": len(model.proto.constraints),
         },
     )
+
+
+def _build_driver_routes(
+    assignments: list[JobAssignment],
+    instance: ProblemInstance,
+    driver_arcs: dict[str, list[tuple[str, int, int]]],
+    chain_lookup: dict[tuple[str, str], int],
+    vd_pairs: set[tuple[str, str]],
+    tba_vehicle_assigned: dict[str, str],
+) -> list[DriverRoute]:
+    """Construct a RouteLeg sequence for each assigned driver."""
+    jobs_by_id = {j.job_id: j for j in instance.jobs}
+    drivers_by_id = {d.driver_id: d for d in instance.drivers}
+    vehicles_by_reg = {v.reg: v for v in instance.vehicles}
+
+    # arc lookup: deadhead and return_deadhead per (driver_id, job_id)
+    arc_lookup: dict[tuple[str, str], tuple[int, int]] = {
+        (arc.driver_id, arc.job_id): (arc.deadhead_minutes, arc.return_deadhead_minutes)
+        for arc in instance.driver_job_arcs
+    }
+
+    # vehicle_job_arc lookup: vehicle_reg -> job_id -> arc
+    vjob_arc_lookup: dict[str, dict[str, object]] = defaultdict(dict)
+    for arc in instance.vehicle_job_arcs:
+        vjob_arc_lookup[arc.vehicle_reg][arc.job_id] = arc
+
+    # group assignments by driver, sorted by start time
+    by_driver: dict[str, list[JobAssignment]] = defaultdict(list)
+    for a in assignments:
+        by_driver[a.driver_id].append(a)
+    for lst in by_driver.values():
+        lst.sort(key=lambda a: a.start_time_t)
+
+    # Build a reverse index: job_id -> chain_type for the arc TO this job from previous
+    # We'll look it up per pair at route-build time instead.
+
+    routes: list[DriverRoute] = []
+
+    for driver_id, driver_assignments in by_driver.items():
+        driver = drivers_by_id[driver_id]
+        home_postcode = driver.home_location.postcode
+        legs: list[RouteLeg] = []
+        total_deadhead = 0
+
+        for idx, assignment in enumerate(driver_assignments):
+            job = jobs_by_id[assignment.job_id]
+            job_postcode = job.target_location.postcode
+
+            if idx == 0:
+                # First leg: home -> first job
+                deadhead, _ = arc_lookup.get((driver_id, assignment.job_id), (None, None))
+                from_pc = home_postcode
+
+                # TBA Deliver: if a depot vehicle is assigned, split into two legs:
+                # home -> depot (transit) then depot -> customer (driving)
+                if job.vehicle_reg is None and assignment.job_id in tba_vehicle_assigned:
+                    v_reg = tba_vehicle_assigned[assignment.job_id]
+                    vehicle = vehicles_by_reg.get(v_reg)
+                    depot_postcode = vehicle.current_location.postcode if vehicle else None
+                    v_arc = vjob_arc_lookup.get(v_reg, {}).get(assignment.job_id)
+                    depot_driving = v_arc.driving_minutes if v_arc else None
+
+                    # transit home -> depot
+                    home_depot_pair = instance.transit_matrix.get(
+                        driver.home_location, vehicle.current_location,
+                    ) if vehicle else None
+                    home_depot_transit = home_depot_pair.transit_minutes if home_depot_pair else None
+
+                    legs.append(RouteLeg(
+                        from_postcode=home_postcode,
+                        to_postcode=job_postcode,
+                        mode="driving",
+                        duration_minutes=depot_driving,
+                        via_depot_postcode=depot_postcode,
+                        via_depot_transit_minutes=home_depot_transit,
+                        via_depot_driving_minutes=depot_driving,
+                        job_id=assignment.job_id,
+                        vehicle_reg=v_reg,
+                    ))
+                else:
+                    legs.append(RouteLeg(
+                        from_postcode=home_postcode,
+                        to_postcode=job_postcode,
+                        mode="transit",
+                        duration_minutes=deadhead,
+                        job_id=assignment.job_id,
+                        vehicle_reg=job.vehicle_reg,
+                    ))
+                if deadhead is not None:
+                    total_deadhead += deadhead
+
+            else:
+                # Subsequent leg: previous job -> this job
+                prev_job = jobs_by_id[driver_assignments[idx - 1].job_id]
+                from_pc = prev_job.target_location.postcode
+
+                # Determine chain type by looking up the JobChainArc between these two jobs
+                chain_type_used = None
+                for arc in instance.job_chain_arcs:
+                    if arc.from_job_id == prev_job.job_id and arc.to_job_id == job.job_id:
+                        # Prefer VEHICLE_DRIVER if present
+                        if arc.chain_type == ChainType.VEHICLE_DRIVER:
+                            chain_type_used = ChainType.VEHICLE_DRIVER
+                            travel = arc.travel_minutes
+                            break
+                        elif chain_type_used is None:
+                            chain_type_used = ChainType.DRIVER_ONLY
+                            travel = arc.travel_minutes
+
+                mode = "driving" if chain_type_used == ChainType.VEHICLE_DRIVER else "transit"
+                duration = travel if chain_type_used is not None else None
+
+                # TBA Deliver sourced from a depot (not from a prior collect chain):
+                # add depot-split info if applicable
+                via_depot_pc = None
+                via_depot_transit = None
+                via_depot_driving = None
+                if job.vehicle_reg is None and assignment.job_id in tba_vehicle_assigned:
+                    v_reg = tba_vehicle_assigned[assignment.job_id]
+                    vehicle = vehicles_by_reg.get(v_reg)
+                    v_arc = vjob_arc_lookup.get(v_reg, {}).get(assignment.job_id)
+                    if vehicle and chain_type_used != ChainType.VEHICLE_DRIVER:
+                        via_depot_pc = vehicle.current_location.postcode
+                        via_depot_driving = v_arc.driving_minutes if v_arc else None
+                        prev_depot_pair = instance.transit_matrix.get(
+                            prev_job.target_location, vehicle.current_location,
+                        )
+                        via_depot_transit = prev_depot_pair.transit_minutes if prev_depot_pair else None
+                        mode = "driving"
+                        duration = via_depot_driving
+
+                legs.append(RouteLeg(
+                    from_postcode=from_pc,
+                    to_postcode=job_postcode,
+                    mode=mode,
+                    duration_minutes=duration,
+                    via_depot_postcode=via_depot_pc,
+                    via_depot_transit_minutes=via_depot_transit,
+                    via_depot_driving_minutes=via_depot_driving,
+                    job_id=assignment.job_id,
+                    vehicle_reg=job.vehicle_reg or tba_vehicle_assigned.get(assignment.job_id),
+                ))
+
+        # Final leg: last job -> home
+        if driver_assignments:
+            last_assignment = driver_assignments[-1]
+            last_job = jobs_by_id[last_assignment.job_id]
+            _, return_dh = arc_lookup.get((driver_id, last_assignment.job_id), (None, None))
+            last_mode = "driving" if last_job.action.value == "collect" else "transit"
+            legs.append(RouteLeg(
+                from_postcode=last_job.target_location.postcode,
+                to_postcode=home_postcode,
+                mode=last_mode,
+                duration_minutes=return_dh,
+            ))
+            if return_dh is not None:
+                total_deadhead += return_dh
+
+        routes.append(DriverRoute(
+            driver_id=driver_id,
+            driver_name=driver.name,
+            home_postcode=home_postcode,
+            legs=legs,
+            deadhead_minutes_total=total_deadhead,
+        ))
+
+    return routes

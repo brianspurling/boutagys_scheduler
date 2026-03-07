@@ -8,38 +8,50 @@ In OR terms: a Deterministic, Multi-Resource, Time-Dependent, Multi-Period Inven
 
 See `docs/specs/high-level-spec.md` for the full problem definition.
 
----
-
-## Working Philosophy — READ THIS FIRST
-
-**We move slowly and deliberately. No rushing to code.**
-
-**Before starting any new task: check in with the user first. Confirm what we're about to build, agree on the approach, then proceed.**
-
-The sequence is fixed:
-
-**Discuss & agree** before building anything
-
-1. **Data pipeline** — load and validate input/ref data into domain model
-2. **Test suite** — real-world examples with human-generated schedules as baseline
-3. **Objective Function** — the objective/cost function we seek to optimise for (we'll start by using these to score the human-created schedules)
-4. **Algorithm** — only after we can measure what "better" means
-
-Do not skip ahead. Do not scaffold the optimizer while working on the data pipeline. Each stage is complete when it is tested and agreed.
 
 ---
 
 ## Folder Structure
 
 ```
-input/          # Daily scheduling input (bookings CSV)
-ref-data/       # Stable reference data (drivers, vehicles, storage locations)
 docs/
-  specs/        # Problem specification documents
-  plans/        # Design docs and implementation plans
-output/         # Generated schedules and scoring output
-zBin/           # Old spike code — kept for reference only, do not modify
+  specs/        # Original high-level spec and Gemini Deep Research output
+  plans/        # Intermediary design docs and implementation plans produced by Claude Code and reviewed by Gemini (with superpowers skill)
+ref-data/       # Stable reference data (drivers, vehicles, storage locations)
+input/          # Daily scheduling export from booking system (bookings CSV). Current example is mostly 8th Dec bookings. Not clear why it doesn't look ahead; not clear why no TBA vehicle assignments. 
+output/         # Generated schedules (csv and JSON versions) and HTML report
+src/            # Code
+tests/          # Test code
 ```
+
+---
+
+### Solution Overview (simple/conceptual version)
+
+1. Define Nodes: Create a stop for every Job, Depot (Pick-up and Drop-off), and Driver Home.
+
+2. Build Legal Arcs (The Map): 
+
+  - Legality Check: Only draw paths that are physically possible 
+    - Custody State: if a driver has a van they cannot pick up another (state-dependent arcs)
+    - Certification: Driver must have a valid license for that specific vehicle.
+    - Time: They must be able to reach the destination within the window.
+
+  - Costing: Apply "weighted costs" to every path (tolls).
+    - Mode: Driving is cheaper; Transit is more expensive.
+    - Dwell: Add 15-minute "dwell" time for any path passing through a Depot.
+
+  - Pruning: Discard any arc that is physically impossible or so expensive it’s clearly not optimal (e.g., a 4-hour commute to a 10-minute job).
+
+3. CP-SAT (The Circuit Solver)
+
+  - Constraint Solver: Apply the "Hard Rules."
+    - Coverage: Every job node must be visited exactly once.
+    - Connectivity: Every driver must follow a continuous loop (Circuit).
+    Shift Limits: Total time from Home-to-Home <= Max Hours.
+  - Objective Optimizer: Find the set of "Circuits" (closed loops starting/ending at Home) that minimizes:
+    - Total Arc Cost (The "Tolls" from Step 2).
+    - Driver Activation Penalty (A massive cost added to the first arc leaving Home, forcing the solver to use fewer drivers)
 
 ---
 
@@ -77,40 +89,18 @@ zBin/           # Old spike code — kept for reference only, do not modify
 - `can_overnight` must be true for any multi-day assignment
 - Drivers with entries in `unavailable_dates` cannot be assigned on those dates
 
----
+--- 
 
 ## Optimization Objectives (what "better" means)
 
 To be formally defined in the scoring stage, but the high-level targets are:
 - Minimise total deadhead time/cost across all drivers
-- Maximise job chaining (collect → deliver with turnaround buffer)
-- Balance workload across drivers
 - Respect soft time windows with cost penalties (not hard cutoffs)
+- Get as few drivers doing as many jobs as possible (driver density)
 - Preserve scarce vehicle groups for future demand (opportunity cost)
 
 ---
 
-## Build Stages
-
-### Stage 1 — Data Pipeline
-Parse and validate all input/ref data into a typed domain model. Goal: a clean, validated in-memory representation of a day's scheduling problem, ready to be consumed by downstream stages.
-
-- No solver logic here
-- But data model must be designed with the high-level solution in mind
-- Must surface data quality issues (missing postcodes, unknown vehicle groups, etc.)
-- Must produce a deterministic, reproducible output from the same input
-
-**Data model design**: see `docs/plans/2026-03-06-data-model-design.md` for the approved design. Key decisions:
-- **Pydantic frozen models** — immutable, validated, serializable domain objects
-- **Builder pattern** — `ProblemBuilder` ingests CSVs, validates, computes arcs, produces an immutable `ProblemInstance`
-- **Dual time representation** — human-readable `datetime` + integer-minute offsets from horizon start on all time fields
-- **Pre-computed arc graph** — builder pre-prunes infeasible DriverJobArcs, VehicleJobArcs, and JobChainArcs before the solver sees them
-- **Dual-mode transit matrix** — stores both `transit_minutes` (PT deadhead with +15% buffer) and `driving_minutes` per location pair
-- **Two chain types** — DRIVER_ONLY (PT between jobs) and VEHICLE_DRIVER (collect→deliver with 45-min turnaround, matching vehicle groups)
-- **Infeasible job exclusion** — jobs with zero feasible arcs are excluded from ProblemInstance (not just warned about) to prevent solver INFEASIBLE on the whole board
-- **Transit fallback** — missing transit data falls back to Haversine × conservative speed multiplier rather than failing the build
-- **Explicit cert lookup** — vehicle group → certification level mapping with no prefix-guessing; fail on unknown groups
-- **Arc pruning uses best-case timing** — `window_start_t` (not nominal time) to avoid over-pruning valid soft-window shifts
 
 **Bookings CSV parsing rules:**
 - Strip blank rows first (used as visual separators in the human spreadsheet, carry no meaning)
@@ -119,32 +109,3 @@ Parse and validate all input/ref data into a typed domain model. Goal: a clean, 
 - `Supp'd Grp` may contain upgrade notation with `>` (e.g. `E.A17>D.B9A`): take the second (rightmost) value as the operative vehicle group
 - Job notes are descoped for now — store as a raw string, do not parse for structured constraints
 
-### Stage 2 — Test Suite
-A set of real-world scheduling days with:
-- The raw input data for that day
-- The schedule the human team produced (the **baseline**)
-- The baseline stored in a format the scorer can evaluate
-
-The human schedule is always the baseline to beat. We never claim victory unless we demonstrably outperform it on the agreed metrics.
-
-### Stage 3 — Objective Function
-Define the objective function: the cost/penalty structure that expresses what "better" means (deadhead time, chaining bonuses, soft time window penalties, etc.). Agree on the terms and weights before any code is written.
-
-### Stage 4 — Algorithm
-Build the CP-SAT model with the agreed objective function and constraints. The model operates in two modes — same code, same objective function, same constraints, always:
-
-- **Scoring mode**: human schedule is loaded and all assignment variables are fixed ("locked") to what the human chose. The solver evaluates the objective on the locked board instantly. No search required.
-- **Optimisation mode**: variables are free, solver searches for the minimum cost solution.
-
-This is the **variable fixing** pattern — there is one single source of truth for all business logic. There is no separate scorer and no risk of logic drift between two codebases computing costs differently.
-
----
-
-## Technical Notes
-
-- **Time resolution**: integer minutes throughout. No floats, no broad shift buckets.
-- **Transit caching**: public transit times between postcodes must be pre-cached, not queried live during solver runs.
-- **Geographic clustering**: pre-processing step to group jobs by zone before the heavy routing math.
-- **Sparse graph pruning**: prune impossible job-to-job and driver-to-job arcs before instantiating solver variables — based on temporal feasibility, not arbitrary radius caps.
-- **Solver**: Google OR-Tools CP-SAT is the target. 5-minute timeout with best-incumbent fallback.
-- **Parking constraints**: high-density restricted postcodes (SW1, EC1, etc.) must block or heavily penalize early drop-offs.
