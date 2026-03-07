@@ -253,8 +253,7 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
             model.add(false_var == 0)
 
     # Rule 2: each depot vehicle assigned to at most one TBA job
-    from collections import defaultdict as _dd
-    vehicle_assignments: dict[str, list] = _dd(list)
+    vehicle_assignments: dict[str, list] = defaultdict(list)
     for (v_reg, j_id) in y:
         vehicle_assignments[v_reg].append(y[v_reg, j_id])
     for v_reg, assigned in vehicle_assignments.items():
