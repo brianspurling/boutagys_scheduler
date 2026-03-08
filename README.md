@@ -221,7 +221,3 @@ Deliver jobs with no `Reg No.` (TBA) are not yet handled. The solver needs to dy
 ### Storage location capacity tracking
 
 Depot capacity limits exist in `storage_locations.csv` but are not yet enforced in the solver. Cumulative/Reservoir constraints tracking vehicle arrivals minus departures at each depot need to be added.
-
-### Report not auto-regenerated
-
-`report.html` is a static file that must be manually regenerated (or rebuilt as a script) after each solver run. Currently it is committed separately from `schedule.json`.
