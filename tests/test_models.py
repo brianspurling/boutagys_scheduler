@@ -105,8 +105,11 @@ def test_job():
         scheduled_time=time(9, 0),
         scheduled_datetime=datetime(2025, 12, 8, 9, 0),
         time_offset_minutes=540,
-        window_start_t=480,
-        window_end_t=600,
+        earliest_departure_t=480,
+        grace_end_t=600,
+        same_day_end_t=1439,
+        same_day_start_t=0,
+        deadline_t=None,
         vehicle_reg="SM73ZRL",
         vehicle_group="V2",
         target_location=Location(postcode="TW11 8QA", lat=51.4264, lon=-0.3280),
@@ -114,8 +117,8 @@ def test_job():
     )
     assert j.action == ActionType.COLLECT
     assert j.vehicle_reg == "SM73ZRL"
-    assert j.window_start_t == 480
-    assert j.window_end_t == 600
+    assert j.earliest_departure_t == 480
+    assert j.grace_end_t == 600
 
 
 def test_job_tba_vehicle():
@@ -131,8 +134,11 @@ def test_job_tba_vehicle():
         scheduled_time=time(9, 30),
         scheduled_datetime=datetime(2025, 12, 8, 9, 30),
         time_offset_minutes=570,
-        window_start_t=510,
-        window_end_t=630,
+        earliest_departure_t=None,
+        grace_end_t=None,
+        same_day_end_t=1439,
+        same_day_start_t=0,
+        deadline_t=570,
         vehicle_reg=None,
         vehicle_group="V2",
         target_location=Location(postcode="KT6 7NS", lat=51.3897, lon=-0.3000),
@@ -308,3 +314,54 @@ def test_driver_circuit_graph():
     assert graph.driver_id == "D1"
     assert len(graph.nodes) == 1
     assert len(graph.arcs) == 1
+
+
+def test_collect_job_has_new_time_fields():
+    from scheduler.models import ActionType, Job, Location
+    from datetime import date, time, datetime
+    loc = Location(postcode="SW1A 1AA", lat=51.5, lon=-0.1)
+    j = Job(
+        job_id="J001", book_no="#1", order_ref="", rental_no="",
+        book_name="", book_status="",
+        action=ActionType.COLLECT,
+        scheduled_date=date(2025, 12, 8),
+        scheduled_time=time(8, 30),
+        scheduled_datetime=datetime(2025, 12, 8, 8, 30),
+        time_offset_minutes=510,
+        earliest_departure_t=510,
+        grace_end_t=630,
+        same_day_end_t=1439,
+        same_day_start_t=0,
+        deadline_t=None,
+        vehicle_reg="ABC123", vehicle_group="V3",
+        target_location=loc, notes="",
+    )
+    assert j.earliest_departure_t == 510
+    assert j.grace_end_t == 630
+    assert j.same_day_end_t == 1439
+    assert j.deadline_t is None
+
+
+def test_deliver_job_has_new_time_fields():
+    from scheduler.models import ActionType, Job, Location
+    from datetime import date, time, datetime
+    loc = Location(postcode="SW1A 1AA", lat=51.5, lon=-0.1)
+    j = Job(
+        job_id="J002", book_no="#2", order_ref="", rental_no="",
+        book_name="", book_status="",
+        action=ActionType.DELIVER,
+        scheduled_date=date(2025, 12, 8),
+        scheduled_time=time(14, 0),
+        scheduled_datetime=datetime(2025, 12, 8, 14, 0),
+        time_offset_minutes=840,
+        earliest_departure_t=None,
+        grace_end_t=None,
+        same_day_end_t=1439,
+        same_day_start_t=0,
+        deadline_t=840,
+        vehicle_reg="ABC123", vehicle_group="V3",
+        target_location=loc, notes="",
+    )
+    assert j.deadline_t == 840
+    assert j.same_day_start_t == 0
+    assert j.earliest_departure_t is None

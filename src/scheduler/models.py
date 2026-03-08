@@ -67,8 +67,11 @@ class Job(BaseModel, frozen=True):
     scheduled_time: time | None
     scheduled_datetime: datetime | None
     time_offset_minutes: int | None
-    window_start_t: int
-    window_end_t: int
+    earliest_departure_t: int | None   # COLLECT only: hard floor — driver cannot depart before this
+    grace_end_t: int | None            # COLLECT only: end of zero-penalty zone (earliest_departure_t + 120)
+    same_day_end_t: int                # both: minute index of end of scheduled day
+    same_day_start_t: int              # both: minute index of start of scheduled day
+    deadline_t: int | None             # DELIVER only: latest desired arrival (booking time)
     vehicle_reg: str | None
     vehicle_group: str
     target_location: Location
@@ -202,6 +205,8 @@ class RouteLeg(BaseModel, frozen=True):
     # Booking reference for the job at the destination (if any)
     job_id: str | None = None
     vehicle_reg: str | None = None
+    # Set when this leg arrives at or departs from a named depot
+    depot_name: str | None = None
 
 
 class DriverRoute(BaseModel, frozen=True):
