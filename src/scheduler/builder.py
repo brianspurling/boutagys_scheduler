@@ -10,15 +10,11 @@ from scheduler.cert_table import VEHICLE_GROUP_CERTS
 from scheduler.geo import estimate_transit_pair
 from scheduler.loaders import load_bookings, load_drivers, load_postcode_coords, load_storage_locations, load_vehicles
 from scheduler.models import (
-    BuildResult, Driver, HorizonConfig, Job,
+    ActionType, BuildResult, Driver, HorizonConfig, Job,
     Location, ProblemInstance, StorageLocation,
     TransitMatrix, TransitPair, ValidationIssue, ValidationReport,
     Vehicle,
 )
-
-# Default time window: +/- 60 minutes around scheduled time
-_WINDOW_BEFORE_MINUTES = 60
-_WINDOW_AFTER_MINUTES = 60
 
 
 class ProblemBuilder:
@@ -102,23 +98,33 @@ class ProblemBuilder:
                 report=ValidationReport(issues=issues, stats={"total_jobs": len(self._raw_jobs)}),
             )
 
-        # Compute time offsets and windows (DST-safe: nominal days * 1440 + h*60 + m)
+        # Compute time offsets and asymmetric window fields
         enriched_jobs: list[Job] = []
         for j in valid_jobs:
             time_offset = None
-            window_start = 0
-            window_end = horizon.t_max
+            days_from_start = (j.scheduled_date - self._horizon_start).days
+            day_start_t = days_from_start * 1440
+            day_end_t = day_start_t + 1439
 
-            if j.scheduled_date is not None and j.scheduled_time is not None:
-                days_from_start = (j.scheduled_date - self._horizon_start).days
-                time_offset = days_from_start * 1440 + j.scheduled_time.hour * 60 + j.scheduled_time.minute
-                window_start = max(0, time_offset - _WINDOW_BEFORE_MINUTES)
-                window_end = min(horizon.t_max, time_offset + _WINDOW_AFTER_MINUTES)
+            earliest_departure_t = None
+            grace_end_t = None
+            deadline_t = None
+
+            if j.scheduled_time is not None:
+                time_offset = day_start_t + j.scheduled_time.hour * 60 + j.scheduled_time.minute
+                if j.action == ActionType.COLLECT:
+                    earliest_departure_t = time_offset
+                    grace_end_t = time_offset + 120
+                else:  # DELIVER
+                    deadline_t = time_offset
 
             enriched_jobs.append(j.model_copy(update={
                 "time_offset_minutes": time_offset,
-                "window_start_t": window_start,
-                "window_end_t": window_end,
+                "earliest_departure_t": earliest_departure_t,
+                "grace_end_t": grace_end_t,
+                "same_day_start_t": day_start_t,
+                "same_day_end_t": day_end_t,
+                "deadline_t": deadline_t,
             }))
 
         # Compute vehicle available_from_t

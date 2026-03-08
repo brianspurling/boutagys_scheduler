@@ -46,10 +46,18 @@ def test_builder_time_offsets():
         assert j.time_offset_minutes == 540
 
 
-def test_builder_time_windows():
+def test_builder_time_fields_valid():
+    """Every job with a scheduled time has sensible time fields."""
     result = _build()
     for j in result.instance.jobs:
-        assert j.window_start_t < j.window_end_t, f"Job {j.job_id} has invalid window"
+        if j.scheduled_time is None:
+            continue
+        assert j.same_day_start_t <= j.same_day_end_t
+        if j.action.value == "collect":
+            assert j.earliest_departure_t is not None
+            assert j.grace_end_t == j.earliest_departure_t + 120
+        else:
+            assert j.deadline_t is not None
 
 
 def test_builder_vehicle_available_from_t():
@@ -97,3 +105,42 @@ def test_builder_no_excluded_jobs_in_instance():
     arc_job_ids = {arc.job_id for arc in inst.driver_job_arcs}
     for j in inst.jobs:
         assert j.job_id in arc_job_ids, f"Job {j.job_id} has no driver arcs but is in instance"
+
+
+def test_builder_collect_time_fields():
+    """Collect job: earliest_departure_t == booking time, grace_end_t == booking + 120."""
+    result = _build()
+    inst = result.instance
+    collect_jobs = [
+        j for j in inst.jobs
+        if j.action.value == "collect"
+        and j.scheduled_time is not None
+        and j.scheduled_date == date(2025, 12, 8)
+        and j.scheduled_time.hour == 8
+        and j.scheduled_time.minute == 30
+    ]
+    assert len(collect_jobs) > 0
+    for j in collect_jobs:
+        assert j.earliest_departure_t == 510, f"{j.job_id}: expected 510, got {j.earliest_departure_t}"
+        assert j.grace_end_t == 630, f"{j.job_id}: expected 630, got {j.grace_end_t}"
+        assert j.same_day_end_t == 1439
+        assert j.same_day_start_t == 0
+
+
+def test_builder_deliver_time_fields():
+    """Deliver job: deadline_t == booking time, same_day_start_t == day start."""
+    result = _build()
+    inst = result.instance
+    deliver_jobs = [
+        j for j in inst.jobs
+        if j.action.value == "deliver"
+        and j.scheduled_time is not None
+        and j.scheduled_date == date(2025, 12, 8)
+    ]
+    assert len(deliver_jobs) > 0
+    for j in deliver_jobs:
+        expected_deadline = j.scheduled_time.hour * 60 + j.scheduled_time.minute
+        assert j.deadline_t == expected_deadline, f"{j.job_id}"
+        assert j.same_day_start_t == 0
+        assert j.earliest_departure_t is None
+        assert j.grace_end_t is None

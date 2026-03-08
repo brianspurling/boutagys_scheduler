@@ -28,7 +28,7 @@ def compute_driver_job_arcs(
             if pair is None:
                 continue
             deadhead = pair.transit_minutes
-            if deadhead > job.window_end_t:
+            if deadhead > job.same_day_end_t:
                 continue
             return_pair = transit_matrix.get(job.target_location, driver.home_location)
             return_deadhead = return_pair.transit_minutes if return_pair else 0
@@ -57,7 +57,7 @@ def compute_vehicle_job_arcs(
             if pair is None:
                 continue
             driving = pair.driving_minutes
-            if vehicle.available_from_t + driving > job.window_end_t:
+            if vehicle.available_from_t + driving > job.same_day_end_t:
                 continue
             arcs.append(VehicleJobArc(
                 vehicle_reg=vehicle.reg,
@@ -84,8 +84,8 @@ def compute_job_chain_arcs(
                 continue
 
             # DRIVER_ONLY arc: any job_a -> any job_b via public transit
-            earliest_arrival = job_a.window_start_t + _SERVICE_TIME + pair.transit_minutes
-            if earliest_arrival <= job_b.window_end_t:
+            earliest_arrival = job_a.same_day_start_t + _SERVICE_TIME + pair.transit_minutes
+            if earliest_arrival <= job_b.same_day_end_t:
                 arcs.append(JobChainArc(
                     from_job_id=job_a.job_id,
                     to_job_id=job_b.job_id,
@@ -106,10 +106,10 @@ def compute_job_chain_arcs(
                 and regs_compatible
             ):
                 earliest_arrival_vd = (
-                    job_a.window_start_t + _SERVICE_TIME
+                    job_a.same_day_start_t + _SERVICE_TIME
                     + pair.driving_minutes + _TURNAROUND_MINUTES
                 )
-                if earliest_arrival_vd <= job_b.window_end_t:
+                if earliest_arrival_vd <= job_b.same_day_end_t:
                     arcs.append(JobChainArc(
                         from_job_id=job_a.job_id,
                         to_job_id=job_b.job_id,

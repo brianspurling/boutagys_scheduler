@@ -230,8 +230,11 @@ def load_bookings(
                 scheduled_time=scheduled_time,
                 scheduled_datetime=scheduled_datetime,
                 time_offset_minutes=None,  # Computed by builder
-                window_start_t=0,          # Placeholder — builder computes
-                window_end_t=0,            # Placeholder — builder computes
+                earliest_departure_t=None, # Computed by builder
+                grace_end_t=None,          # Computed by builder
+                same_day_start_t=0,        # Computed by builder
+                same_day_end_t=0,          # Computed by builder
+                deadline_t=None,           # Computed by builder
                 vehicle_reg=vehicle_reg,
                 vehicle_group=vehicle_group,
                 target_location=Location(
