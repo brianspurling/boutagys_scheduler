@@ -217,5 +217,6 @@ class SolverResult(BaseModel, frozen=True):
     status: str
     solve_time_seconds: float
     assignments: list[JobAssignment]
+    unassigned_job_ids: list[str]
     driver_routes: list[DriverRoute]
     stats: dict[str, int]

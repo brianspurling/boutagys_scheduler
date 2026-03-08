@@ -314,6 +314,7 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
         status=status,
         solve_time_seconds=round(elapsed, 3),
         assignments=assignments,
+        unassigned_job_ids=[],
         driver_routes=driver_routes,
         stats={
             "variables": len(x),

@@ -17,6 +17,7 @@ from scheduler.models import (
 
 ACTIVATION_PENALTY = 120
 SPAN_PENALTY = 1
+UNASSIGNED_PENALTY = 10_000
 
 
 def _extract_driver_routes(
@@ -129,7 +130,7 @@ def _feasible_jobs_for_driver(
 
 
 def solve_circuit(
-    instance: ProblemInstance, timeout_seconds: int = 300,
+    instance: ProblemInstance, timeout_seconds: int = 60,
 ) -> SolverResult:
     """Build and solve the circuit-based CP-SAT model."""
     start_wall = time_mod.monotonic()
@@ -206,27 +207,22 @@ def solve_circuit(
                 >= arrival_time[driver_id][arc.tail] + arc.travel_minutes
             ).only_enforce_if(var)
 
-    # --- Job assignment: every job visited by exactly one driver ---
-    # For each job node j: sum(incoming arcs to j) - self_loop_j == 1
-    # i.e. exactly one real arc enters j (not the self-loop skip arc)
-    # Collect per-job: list of (driver_id, node_index, self_loop_var)
+    # --- Job assignment: every job visited by exactly one driver (soft) ---
+    # sum(incoming real arcs across all drivers) + is_unassigned == 1
+    # is_unassigned is penalised heavily in the objective.
     job_node_info: dict[str, list[tuple[str, int]]] = defaultdict(list)
     for driver_id, graph in driver_graphs.items():
         for node in graph.nodes:
             if node.job_id:
                 job_node_info[node.job_id].append((driver_id, node.index))
 
-    for job in instance.jobs:
-        infos = job_node_info.get(job.job_id, [])
-        if not infos:
-            # No driver graph contains this job — force infeasible
-            false_var = model.new_bool_var(f"infeasible_{job.job_id}")
-            model.add(false_var == 1)
-            model.add(false_var == 0)
-            continue
+    is_unassigned: dict[str, cp_model.IntVar] = {}
 
-        # Sum of (incoming real arcs) across all drivers = 1
-        # incoming real = all arcs with head==node_index except the self-loop
+    for job in instance.jobs:
+        unassigned_var = model.new_bool_var(f"unassigned_{job.job_id}")
+        is_unassigned[job.job_id] = unassigned_var
+
+        infos = job_node_info.get(job.job_id, [])
         visit_terms = []
         for driver_id, node_idx in infos:
             incoming = [
@@ -236,12 +232,8 @@ def solve_circuit(
             ]
             visit_terms.extend(incoming)
 
-        if visit_terms:
-            model.add(sum(visit_terms) == 1)
-        else:
-            false_var = model.new_bool_var(f"infeasible_{job.job_id}")
-            model.add(false_var == 1)
-            model.add(false_var == 0)
+        # sum(real incoming arcs) + is_unassigned == 1
+        model.add(sum(visit_terms) + unassigned_var == 1)
 
     # --- Shift span constraint ---
     is_working: dict[str, cp_model.IntVar] = {}
@@ -303,6 +295,10 @@ def solve_circuit(
                 var = arc_vars[driver_id][(arc.tail, arc.head)]
                 objective_terms.append(arc.cost * var)
 
+    # Unassigned job penalty
+    for job_id, var in is_unassigned.items():
+        objective_terms.append(UNASSIGNED_PENALTY * var)
+
     # Activation penalty
     for driver_id in driver_graphs:
         objective_terms.append(ACTIVATION_PENALTY * is_working[driver_id])
@@ -331,6 +327,7 @@ def solve_circuit(
 
     # --- Extract solution ---
     assignments: list[JobAssignment] = []
+    unassigned_job_ids: list[str] = []
 
     if status in ("OPTIMAL", "FEASIBLE"):
         for driver_id, graph in driver_graphs.items():
@@ -352,6 +349,11 @@ def solve_circuit(
                         start_datetime=_t_to_datetime(start_t, instance.horizon),
                     ))
 
+        unassigned_job_ids = [
+            job_id for job_id, var in is_unassigned.items()
+            if solver.value(var)
+        ]
+
     driver_routes: list[DriverRoute] = []
     if status in ("OPTIMAL", "FEASIBLE"):
         driver_routes = _extract_driver_routes(
@@ -365,6 +367,7 @@ def solve_circuit(
         status=status,
         solve_time_seconds=round(elapsed, 3),
         assignments=assignments,
+        unassigned_job_ids=unassigned_job_ids,
         driver_routes=driver_routes,
         stats={
             "variables": sum(len(avs) for avs in arc_vars.values()),

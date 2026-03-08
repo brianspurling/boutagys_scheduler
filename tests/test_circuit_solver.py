@@ -185,12 +185,14 @@ def test_collect_deliver_collect_feasible_with_depot():
 
 
 def test_shift_span_limit():
-    """Shift span exceeding max_hours_per_day is infeasible."""
+    """Shift span exceeding max_hours_per_day forces job to be unassigned."""
     d = _make_driver(max_hours=40)  # 40 minutes max
     # Job at 480: transit out=30min, return driving=20min → min span=50 > 40
     j = _make_collect("J1", LOC_A, window_start=480, window_end=540)
     result = solve_circuit(_make_instance([d], [j]))
-    assert result.status == "INFEASIBLE"
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 0
+    assert "J1" in result.unassigned_job_ids
 
 
 # --- TBA vehicle assignment ---
@@ -221,13 +223,15 @@ def test_tba_deliver_from_collect_chain():
 
 
 def test_tba_no_source_infeasible():
-    """TBA deliver with no depot vehicle and no matching collect — INFEASIBLE."""
+    """TBA deliver with no depot vehicle and no matching collect — left unassigned."""
     d = _make_driver()
     j = _make_deliver("J1", LOC_A, vehicle_reg=None, group="V3",
                       window_start=480, window_end=700)
     # No depot, no vehicles, no collects
     result = solve_circuit(_make_instance([d], [j]))
-    assert result.status == "INFEASIBLE"
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 0
+    assert "J1" in result.unassigned_job_ids
 
 
 # --- Objective function behavior ---
@@ -304,3 +308,45 @@ def test_chaining_cheaper_than_depot_detour():
     # Verify ordering
     starts = {a.job_id: a.start_time_t for a in result.assignments}
     assert starts["J1"] < starts["J2"]
+
+
+# --- Integration test ---
+
+def test_circuit_solver_real_sample_data():
+    """Integration: build from real CSVs and solve with circuit solver."""
+    from pathlib import Path
+    from collections import defaultdict
+    from scheduler.builder import ProblemBuilder
+
+    ROOT = Path(__file__).resolve().parent.parent
+    result = (
+        ProblemBuilder(horizon_start=date(2025, 12, 8), num_days=5)
+        .load_postcode_coords(ROOT / "ref-data" / "postcode_coords.csv")
+        .load_storage_locations(ROOT / "ref-data" / "storage_locations.csv")
+        .load_drivers(ROOT / "ref-data" / "drivers.csv")
+        .load_vehicles(ROOT / "ref-data" / "vehicle_inventory.csv")
+        .load_bookings(ROOT / "input" / "sample_bookings_data.csv")
+        .build()
+    )
+    assert result.ok
+    inst = result.instance
+
+    solver_result = solve_circuit(inst, timeout_seconds=120)
+    assert solver_result.status in ("OPTIMAL", "FEASIBLE"), (
+        f"Circuit solver returned {solver_result.status} on sample data"
+    )
+
+    # Assigned + unassigned must cover all jobs exactly once
+    assigned_job_ids = {a.job_id for a in solver_result.assignments}
+    unassigned_job_ids = set(solver_result.unassigned_job_ids)
+    all_job_ids = {j.job_id for j in inst.jobs}
+    assert assigned_job_ids | unassigned_job_ids == all_job_ids
+    assert assigned_job_ids & unassigned_job_ids == set()
+
+    # Most jobs should be assigned (unassigned indicates genuinely infeasible jobs)
+    assert len(solver_result.assignments) > 0
+    if solver_result.unassigned_job_ids:
+        print(f"\nUnassigned jobs ({len(solver_result.unassigned_job_ids)}): {solver_result.unassigned_job_ids}")
+
+    # Verify routes exist for used drivers
+    assert len(solver_result.driver_routes) > 0

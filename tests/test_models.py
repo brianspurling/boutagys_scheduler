@@ -237,6 +237,8 @@ def test_solver_result_feasible():
             JobAssignment(job_id="J001", driver_id="D001", start_time_t=540,
                           start_datetime=datetime(2025, 12, 8, 9, 0)),
         ],
+        unassigned_job_ids=[],
+        driver_routes=[],
         stats={"variables": 100, "constraints": 50},
     )
     assert r.status == "FEASIBLE"
@@ -246,7 +248,7 @@ def test_solver_result_feasible():
 def test_solver_result_infeasible():
     r = SolverResult(
         status="INFEASIBLE", solve_time_seconds=0.5,
-        assignments=[], stats={},
+        assignments=[], unassigned_job_ids=[], driver_routes=[], stats={},
     )
     assert r.assignments == []
 

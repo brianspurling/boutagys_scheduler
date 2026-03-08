@@ -5,7 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from scheduler.builder import ProblemBuilder
-from scheduler.solver import solve
+from scheduler.circuit_solver import solve_circuit
 from scheduler.exporter import print_schedule, export_csv, export_json
 
 ROOT = Path(__file__).resolve().parent
@@ -34,16 +34,17 @@ def main():
         return
 
     inst = result.instance
-    print(f"Built: {len(inst.jobs)} jobs, {len(inst.drivers)} drivers, "
-          f"{len(inst.driver_job_arcs)} driver-job arcs, "
-          f"{len(inst.job_chain_arcs)} chain arcs")
+    print(f"Built: {len(inst.jobs)} jobs, {len(inst.drivers)} drivers")
 
     # Solve
     print("\nSolving...")
-    solver_result = solve(inst, timeout_seconds=300)
+    solver_result = solve_circuit(inst, timeout_seconds=60)
 
     # Print
     print_schedule(solver_result, inst)
+    if solver_result.unassigned_job_ids:
+        print(f"\nUnassigned jobs ({len(solver_result.unassigned_job_ids)}): "
+              f"{', '.join(solver_result.unassigned_job_ids)}")
 
     # Export CSV
     if solver_result.status in ("OPTIMAL", "FEASIBLE"):

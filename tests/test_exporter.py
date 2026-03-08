@@ -40,6 +40,7 @@ def test_print_schedule_runs(capsys):
             JobAssignment(job_id="J1", driver_id="D1", start_time_t=540,
                           start_datetime=datetime(2025, 12, 8, 9, 0)),
         ],
+        unassigned_job_ids=[], driver_routes=[],
         stats={"variables": 10, "constraints": 5},
     )
     print_schedule(solver_result, INSTANCE)
@@ -53,7 +54,7 @@ def test_print_schedule_runs(capsys):
 def test_print_schedule_infeasible(capsys):
     solver_result = SolverResult(
         status="INFEASIBLE", solve_time_seconds=0.1,
-        assignments=[], stats={},
+        assignments=[], unassigned_job_ids=[], driver_routes=[], stats={},
     )
     print_schedule(solver_result, INSTANCE)
     captured = capsys.readouterr()
@@ -80,7 +81,7 @@ def test_export_csv(tmp_path):
             JobAssignment(job_id="J1", driver_id="D1", start_time_t=540,
                           start_datetime=datetime(2025, 12, 8, 9, 0)),
         ],
-        stats={},
+        unassigned_job_ids=[], driver_routes=[], stats={},
     )
     output_csv = tmp_path / "output.csv"
     export_csv(solver_result, INSTANCE, input_csv, output_csv)
