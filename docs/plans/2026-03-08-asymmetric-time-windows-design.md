@@ -76,15 +76,17 @@ penalty = LATE_SAME_DAY_RATE * minutes_past_grace + SEVERE_NEXT_DAY_RATE * minut
 minutes_early = model.new_int_var(0, t_max, f"early_{job_id}")
 model.add_max_equality(minutes_early, [0, same_day_start_t - arrival])
 
-minutes_late_t1 = model.new_int_var(0, 60, f"late_t1_{job_id}")
-model.add_max_equality(minutes_late_t1, [0, min(arrival - deadline_t, 60)])
+minutes_late_t1 = model.new_int_var(0, t_max, f"late_t1_{job_id}")
+model.add_max_equality(minutes_late_t1, [0, arrival - deadline_t])
 
 minutes_late_t2 = model.new_int_var(0, t_max, f"late_t2_{job_id}")
 model.add_max_equality(minutes_late_t2, [0, arrival - deadline_t - 60])
 
+# Delta encoding: t1 charges TIER1 for all late minutes;
+# t2 adds (TIER2 - TIER1) for minutes beyond 60, so total beyond 60 == TIER2.
 penalty = (EARLY_RATE * minutes_early
          + LATE_TIER1_RATE * minutes_late_t1
-         + LATE_TIER2_RATE * minutes_late_t2)
+         + (LATE_TIER2_RATE - LATE_TIER1_RATE) * minutes_late_t2)
 ```
 
 `EARLY_RATE` is set as a per-minute value; delivering 1 day early = `1440 * EARLY_RATE`, giving a natural per-day ramp without division.

@@ -535,17 +535,23 @@ for job in instance.jobs:
             minutes_early = model.new_int_var(0, t_max, f"early_{job.job_id}_{driver_id}")
             model.add_max_equality(minutes_early, [0, job.same_day_start_t - arrival])
 
-            minutes_late_t1 = model.new_int_var(0, 60, f"late_t1_{job.job_id}_{driver_id}")
+            # No clamping on t1 — let it grow to t_max.
+            # Clamping to 60 would make the model INFEASIBLE when arrival - deadline > 60,
+            # because add_max_equality would force t1=100 but the domain says <=60.
+            # Python min() on an IntVar also fails with TypeError at build time.
+            minutes_late_t1 = model.new_int_var(0, t_max, f"late_t1_{job.job_id}_{driver_id}")
             model.add_max_equality(minutes_late_t1, [0, arrival - job.deadline_t])
-            # Clamp t1 to 60 via upper bound on var (already set) + a constraint
-            model.add(minutes_late_t1 <= 60)
 
+            # t2 tracks only the portion beyond 60 minutes
             minutes_late_t2 = model.new_int_var(0, t_max, f"late_t2_{job.job_id}_{driver_id}")
             model.add_max_equality(minutes_late_t2, [0, arrival - job.deadline_t - 60])
 
             job_penalty_terms.append(EARLY_RATE * minutes_early)
             job_penalty_terms.append(LATE_TIER1_RATE * minutes_late_t1)
-            job_penalty_terms.append(LATE_TIER2_RATE * minutes_late_t2)
+            # Delta encoding: t1 already charges TIER1_RATE for all late minutes.
+            # t2 adds the *difference* so minutes > 60 are charged TIER2_RATE total,
+            # not TIER1 + TIER2 (which would double-count).
+            job_penalty_terms.append((LATE_TIER2_RATE - LATE_TIER1_RATE) * minutes_late_t2)
 ```
 
 Then add `job_penalty_terms` into the objective:
