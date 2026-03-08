@@ -338,6 +338,7 @@ def test_collect_job_has_new_time_fields():
     )
     assert j.earliest_departure_t == 510
     assert j.grace_end_t == 630
+    assert j.same_day_start_t == 0
     assert j.same_day_end_t == 1439
     assert j.deadline_t is None
 
@@ -364,4 +365,5 @@ def test_deliver_job_has_new_time_fields():
     )
     assert j.deadline_t == 840
     assert j.same_day_start_t == 0
+    assert j.grace_end_t is None
     assert j.earliest_departure_t is None

@@ -69,8 +69,8 @@ class Job(BaseModel, frozen=True):
     time_offset_minutes: int | None
     earliest_departure_t: int | None   # COLLECT only: hard floor — driver cannot depart before this
     grace_end_t: int | None            # COLLECT only: end of zero-penalty zone (earliest_departure_t + 120)
-    same_day_end_t: int                # both: minute index of end of scheduled day
     same_day_start_t: int              # both: minute index of start of scheduled day
+    same_day_end_t: int                # both: minute index of end of scheduled day
     deadline_t: int | None             # DELIVER only: latest desired arrival (booking time)
     vehicle_reg: str | None
     vehicle_group: str
