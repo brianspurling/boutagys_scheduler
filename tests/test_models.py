@@ -8,6 +8,7 @@ from scheduler.models import (
     ValidationIssue, ValidationReport,
     ProblemInstance, BuildResult,
     JobAssignment, SolverResult,
+    CircuitNode, CircuitArc, DriverCircuitGraph,
 )
 import pytest
 
@@ -248,3 +249,60 @@ def test_solver_result_infeasible():
         assignments=[], stats={},
     )
     assert r.assignments == []
+
+
+def test_circuit_node_types():
+    """CircuitNode can represent all 5 node types."""
+    home = CircuitNode(
+        index=0, node_type="home", driver_id="D1",
+        postcode="AA1 1AA", job_id=None, storage_location_id=None,
+    )
+    collect = CircuitNode(
+        index=1, node_type="collect", driver_id="D1",
+        postcode="BB2 2BB", job_id="J1", storage_location_id=None,
+    )
+    deliver = CircuitNode(
+        index=2, node_type="deliver", driver_id="D1",
+        postcode="CC3 3CC", job_id="J2", storage_location_id=None,
+    )
+    depot_drop = CircuitNode(
+        index=3, node_type="depot_drop", driver_id="D1",
+        postcode="DD4 4DD", job_id=None, storage_location_id="S001",
+    )
+    depot_pickup = CircuitNode(
+        index=4, node_type="depot_pickup", driver_id="D1",
+        postcode="DD4 4DD", job_id=None, storage_location_id="S001",
+    )
+    assert home.node_type == "home"
+    assert collect.node_type == "collect"
+    assert deliver.node_type == "deliver"
+    assert depot_drop.node_type == "depot_drop"
+    assert depot_pickup.node_type == "depot_pickup"
+
+
+def test_circuit_arc():
+    """CircuitArc stores tail, head, travel, cost, and state metadata."""
+    arc = CircuitArc(
+        tail=0, head=1, travel_minutes=30, cost=90,
+        mode="transit", vehicle_reg=None,
+    )
+    assert arc.tail == 0
+    assert arc.head == 1
+    assert arc.cost == 90
+    assert arc.mode == "transit"
+
+
+def test_driver_circuit_graph():
+    """DriverCircuitGraph bundles nodes and arcs for one driver."""
+    home = CircuitNode(
+        index=0, node_type="home", driver_id="D1",
+        postcode="AA1 1AA", job_id=None, storage_location_id=None,
+    )
+    arc = CircuitArc(
+        tail=0, head=0, travel_minutes=0, cost=0,
+        mode="transit", vehicle_reg=None,
+    )
+    graph = DriverCircuitGraph(driver_id="D1", nodes=[home], arcs=[arc])
+    assert graph.driver_id == "D1"
+    assert len(graph.nodes) == 1
+    assert len(graph.arcs) == 1

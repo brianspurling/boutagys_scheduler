@@ -146,6 +146,33 @@ class ProblemInstance(BaseModel, frozen=True):
     vehicle_job_arcs: list[VehicleJobArc]
 
 
+class CircuitNode(BaseModel, frozen=True):
+    """A node in a driver's circuit graph."""
+    index: int  # unique per driver's graph, 0 = home
+    node_type: Literal["home", "collect", "deliver", "depot_drop", "depot_pickup"]
+    driver_id: str
+    postcode: str
+    job_id: str | None = None  # set for collect/deliver nodes
+    storage_location_id: str | None = None  # set for depot nodes
+
+
+class CircuitArc(BaseModel, frozen=True):
+    """A directed arc in a driver's circuit graph."""
+    tail: int  # index of source node
+    head: int  # index of destination node
+    travel_minutes: int
+    cost: int  # weighted cost (integer, for CP-SAT)
+    mode: Literal["transit", "driving"]
+    vehicle_reg: str | None = None  # set for driving arcs with specific vehicle
+
+
+class DriverCircuitGraph(BaseModel, frozen=True):
+    """Complete circuit graph for one driver."""
+    driver_id: str
+    nodes: list[CircuitNode]
+    arcs: list[CircuitArc]
+
+
 class BuildResult(BaseModel):
     instance: ProblemInstance | None
     report: ValidationReport
