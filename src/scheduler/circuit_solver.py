@@ -183,20 +183,9 @@ def solve_circuit(
 
         # Create arrival time variables for each node
         for node in graph.nodes:
-            if node.node_type == "home":
-                arrival_time[driver_id][node.index] = model.new_int_var(
-                    0, t_max, f"arrival_{driver_id}_{node.index}",
-                )
-            elif node.job_id:
-                arrival_time[driver_id][node.index] = model.new_int_var(
-                    0, t_max,
-                    f"arrival_{driver_id}_{node.index}",
-                )
-            else:
-                # Depot nodes
-                arrival_time[driver_id][node.index] = model.new_int_var(
-                    0, t_max, f"arrival_{driver_id}_{node.index}",
-                )
+            arrival_time[driver_id][node.index] = model.new_int_var(
+                0, t_max, f"arrival_{driver_id}_{node.index}",
+            )
 
         # Hard collect floor: service cannot start before booking time
         for node in graph.nodes:
