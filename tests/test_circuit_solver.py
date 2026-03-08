@@ -248,6 +248,48 @@ def test_activation_penalty_prefers_fewer_drivers():
     assert len(drivers_used) == 1
 
 
+# --- Route extraction ---
+
+def test_route_extraction_single_collect():
+    """Single collect: route = HOME -transit-> COLLECT -driving-> HOME."""
+    d = _make_driver()
+    j = _make_collect("J1", LOC_A, window_start=480, window_end=600)
+    result = solve_circuit(_make_instance([d], [j]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.driver_routes) == 1
+    route = result.driver_routes[0]
+    assert route.driver_id == "D1"
+    assert route.home_postcode == "HH1 1HH"
+    assert len(route.legs) >= 2
+    # First leg: transit from home
+    assert route.legs[0].from_postcode == "HH1 1HH"
+    assert route.legs[0].mode == "transit"
+    # Last leg: driving back home (collect = in-vehicle)
+    assert route.legs[-1].to_postcode == "HH1 1HH"
+    assert route.legs[-1].mode == "driving"
+
+
+def test_route_extraction_collect_deliver_chain():
+    """Collect then deliver: HOME -transit-> COLLECT -driving-> DELIVER -transit-> HOME."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3",
+                       window_start=480, window_end=540)
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
+                       window_start=600, window_end=800)
+    result = solve_circuit(_make_instance([d], [j1, j2]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.driver_routes) == 1
+    route = result.driver_routes[0]
+    assert len(route.legs) >= 3
+    # First: transit to collect
+    assert route.legs[0].mode == "transit"
+    # Middle: driving collect -> deliver
+    assert route.legs[1].mode == "driving"
+    # Last: transit home (after deliver, driver is empty-handed)
+    assert route.legs[-1].to_postcode == "HH1 1HH"
+    assert route.legs[-1].mode == "transit"
+
+
 def test_chaining_cheaper_than_depot_detour():
     """Collect -> Deliver chain should be cheaper than Collect -> Depot -> transit -> Deliver.
     Verify the solver chains when a matching collect/deliver pair exists."""

@@ -19,6 +19,86 @@ ACTIVATION_PENALTY = 120
 SPAN_PENALTY = 1
 
 
+def _extract_driver_routes(
+    solver: cp_model.CpSolver,
+    driver_graphs: dict[str, DriverCircuitGraph],
+    arc_vars: dict[str, dict[tuple[int, int], cp_model.IntVar]],
+    arrival_time: dict[str, dict[int, cp_model.IntVar]],
+    drivers_by_id: dict,
+    jobs_by_id: dict,
+    instance: ProblemInstance,
+) -> list[DriverRoute]:
+    """Extract driver routes from the solved circuit model."""
+    routes: list[DriverRoute] = []
+
+    for driver_id, graph in driver_graphs.items():
+        driver = drivers_by_id[driver_id]
+
+        # Find the active path by following arcs from home (node 0)
+        active_arcs: dict[int, int] = {}  # tail -> head
+        for (tail, head), var in arc_vars[driver_id].items():
+            if tail != head and solver.value(var):
+                active_arcs[tail] = head
+
+        if not active_arcs:
+            continue  # driver not used
+
+        # Follow the path: home -> ... -> home
+        path: list[int] = [0]
+        current = 0
+        visited_set = {0}
+        while current in active_arcs:
+            next_node = active_arcs[current]
+            if next_node == 0:
+                break  # back to home
+            if next_node in visited_set:
+                break  # safety
+            path.append(next_node)
+            visited_set.add(next_node)
+            current = next_node
+
+        if len(path) <= 1:
+            continue  # no jobs visited
+
+        # Build legs from path
+        nodes_by_idx = {n.index: n for n in graph.nodes}
+        arc_lookup = {(a.tail, a.head): a for a in graph.arcs}
+        legs: list[RouteLeg] = []
+        total_deadhead = 0
+
+        for i in range(len(path)):
+            tail_idx = path[i]
+            head_idx = path[i + 1] if i + 1 < len(path) else 0  # last leg goes home
+            tail_node = nodes_by_idx[tail_idx]
+            head_node = nodes_by_idx[head_idx]
+            arc = arc_lookup.get((tail_idx, head_idx))
+            if arc is None:
+                continue
+
+            leg = RouteLeg(
+                from_postcode=tail_node.postcode,
+                to_postcode=head_node.postcode,
+                mode=arc.mode,
+                duration_minutes=arc.travel_minutes,
+                job_id=head_node.job_id,
+                vehicle_reg=arc.vehicle_reg,
+            )
+            legs.append(leg)
+
+            if arc.mode == "transit":
+                total_deadhead += arc.travel_minutes
+
+        routes.append(DriverRoute(
+            driver_id=driver_id,
+            driver_name=driver.name,
+            home_postcode=driver.home_location.postcode,
+            legs=legs,
+            deadhead_minutes_total=total_deadhead,
+        ))
+
+    return routes
+
+
 def _t_to_datetime(t: int, horizon: HorizonConfig) -> datetime:
     day_offset, minutes_in_day = divmod(t, 1440)
     actual_date = horizon.start_date + timedelta(days=day_offset)
@@ -272,13 +352,20 @@ def solve_circuit(
                         start_datetime=_t_to_datetime(start_t, instance.horizon),
                     ))
 
+    driver_routes: list[DriverRoute] = []
+    if status in ("OPTIMAL", "FEASIBLE"):
+        driver_routes = _extract_driver_routes(
+            solver, driver_graphs, arc_vars, arrival_time,
+            drivers_by_id, jobs_by_id, instance,
+        )
+
     elapsed = time_mod.monotonic() - start_wall
 
     return SolverResult(
         status=status,
         solve_time_seconds=round(elapsed, 3),
         assignments=assignments,
-        driver_routes=[],  # Task 10
+        driver_routes=driver_routes,
         stats={
             "variables": sum(len(avs) for avs in arc_vars.values()),
             "constraints": len(model.proto.constraints),
