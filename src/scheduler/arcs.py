@@ -10,6 +10,9 @@ _SERVICE_TIME = 0
 _TURNAROUND_MINUTES = 45
 
 
+# NOTE: Arc feasibility here uses same_day_end_t as a conservative upper bound.
+# This intentionally admits more arcs than strictly feasible — exact timing
+# (hard collect floor, deliver deadline) is enforced in circuit_solver.py.
 def compute_driver_job_arcs(
     drivers: list[Driver],
     jobs: list[Job],

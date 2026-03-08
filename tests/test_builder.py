@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import date
 
 from scheduler.builder import ProblemBuilder
+from scheduler.models import ActionType
 
 ROOT = Path(__file__).resolve().parent.parent
 INPUT = ROOT / "input"
@@ -53,7 +54,7 @@ def test_builder_time_fields_valid():
         if j.scheduled_time is None:
             continue
         assert j.same_day_start_t <= j.same_day_end_t
-        if j.action.value == "collect":
+        if j.action == ActionType.COLLECT:
             assert j.earliest_departure_t is not None
             assert j.grace_end_t == j.earliest_departure_t + 120
         else:
@@ -113,7 +114,7 @@ def test_builder_collect_time_fields():
     inst = result.instance
     collect_jobs = [
         j for j in inst.jobs
-        if j.action.value == "collect"
+        if j.action == ActionType.COLLECT
         and j.scheduled_time is not None
         and j.scheduled_date == date(2025, 12, 8)
         and j.scheduled_time.hour == 8
@@ -133,13 +134,14 @@ def test_builder_deliver_time_fields():
     inst = result.instance
     deliver_jobs = [
         j for j in inst.jobs
-        if j.action.value == "deliver"
+        if j.action == ActionType.DELIVER
         and j.scheduled_time is not None
         and j.scheduled_date == date(2025, 12, 8)
     ]
     assert len(deliver_jobs) > 0
     for j in deliver_jobs:
-        expected_deadline = j.scheduled_time.hour * 60 + j.scheduled_time.minute
+        days_from_start = (j.scheduled_date - date(2025, 12, 8)).days
+        expected_deadline = days_from_start * 1440 + j.scheduled_time.hour * 60 + j.scheduled_time.minute
         assert j.deadline_t == expected_deadline, f"{j.job_id}"
         assert j.same_day_start_t == 0
         assert j.earliest_departure_t is None
