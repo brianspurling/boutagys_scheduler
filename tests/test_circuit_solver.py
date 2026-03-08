@@ -1,0 +1,230 @@
+"""Tests for the circuit-based solver."""
+
+from datetime import date, time, datetime
+
+from scheduler.models import (
+    ActionType, CertLevel, Driver, HorizonConfig, Job,
+    Location, ProblemInstance, StorageLocation, TransitMatrix, TransitPair,
+    Vehicle,
+)
+from scheduler.circuit_solver import solve_circuit
+
+LOC_HOME = Location(postcode="HH1 1HH", lat=51.5, lon=-0.1)
+LOC_A = Location(postcode="AA1 1AA", lat=51.6, lon=-0.2)
+LOC_B = Location(postcode="BB2 2BB", lat=51.7, lon=-0.3)
+LOC_DEPOT = Location(postcode="DD4 4DD", lat=51.4, lon=0.0)
+
+HORIZON = HorizonConfig(start_date=date(2025, 12, 8), num_days=1, t_max=1440)
+
+MATRIX = TransitMatrix(entries={
+    ("HH1 1HH", "AA1 1AA"): TransitPair(transit_minutes=30, driving_minutes=20),
+    ("AA1 1AA", "HH1 1HH"): TransitPair(transit_minutes=30, driving_minutes=20),
+    ("HH1 1HH", "BB2 2BB"): TransitPair(transit_minutes=40, driving_minutes=25),
+    ("BB2 2BB", "HH1 1HH"): TransitPair(transit_minutes=40, driving_minutes=25),
+    ("AA1 1AA", "BB2 2BB"): TransitPair(transit_minutes=50, driving_minutes=30),
+    ("BB2 2BB", "AA1 1AA"): TransitPair(transit_minutes=50, driving_minutes=30),
+    ("HH1 1HH", "DD4 4DD"): TransitPair(transit_minutes=20, driving_minutes=15),
+    ("DD4 4DD", "HH1 1HH"): TransitPair(transit_minutes=20, driving_minutes=15),
+    ("AA1 1AA", "DD4 4DD"): TransitPair(transit_minutes=25, driving_minutes=18),
+    ("DD4 4DD", "AA1 1AA"): TransitPair(transit_minutes=25, driving_minutes=18),
+    ("BB2 2BB", "DD4 4DD"): TransitPair(transit_minutes=35, driving_minutes=22),
+    ("DD4 4DD", "BB2 2BB"): TransitPair(transit_minutes=35, driving_minutes=22),
+})
+
+
+def _make_driver(driver_id="D1", loc=LOC_HOME, max_hours=600):
+    return Driver(
+        driver_id=driver_id, name=driver_id, home_location=loc,
+        branch="TEST", max_hours_per_day=max_hours, certifications=CertLevel.VAN,
+        can_overnight=True, unavailable_dates=frozenset(),
+    )
+
+
+def _make_collect(job_id, loc, vehicle_reg="VAN1", group="V3",
+                  window_start=480, window_end=600):
+    return Job(
+        job_id=job_id, book_no=f"B{job_id}", order_ref="", rental_no="",
+        book_name="", book_status="",
+        action=ActionType.COLLECT, scheduled_date=date(2025, 12, 8),
+        scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
+        time_offset_minutes=540, window_start_t=window_start, window_end_t=window_end,
+        vehicle_reg=vehicle_reg, vehicle_group=group,
+        target_location=loc, notes="",
+    )
+
+
+def _make_deliver(job_id, loc, vehicle_reg="VAN1", group="V3",
+                  window_start=480, window_end=600):
+    return Job(
+        job_id=job_id, book_no=f"B{job_id}", order_ref="", rental_no="",
+        book_name="", book_status="",
+        action=ActionType.DELIVER, scheduled_date=date(2025, 12, 8),
+        scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
+        time_offset_minutes=540, window_start_t=window_start, window_end_t=window_end,
+        vehicle_reg=vehicle_reg, vehicle_group=group,
+        target_location=loc, notes="",
+    )
+
+
+def _make_storage(location_id="S001", loc=LOC_DEPOT):
+    return StorageLocation(
+        location_id=location_id, name="Depot", location=loc,
+        capacity=20, restricted_groups=set(),
+    )
+
+
+def _make_instance(drivers, jobs, storage_locations=None, vehicles=None):
+    return ProblemInstance(
+        horizon=HORIZON, jobs=jobs, drivers=drivers,
+        vehicles=vehicles or [],
+        storage_locations=storage_locations or [],
+        vehicle_group_certs={"V3": CertLevel.VAN, "V5": CertLevel.VAN},
+        transit_matrix=MATRIX,
+        driver_job_arcs=[], job_chain_arcs=[], vehicle_job_arcs=[],
+    )
+
+
+# --- Basic circuit feasibility ---
+
+def test_single_collect_feasible():
+    """One driver, one collect job — FEASIBLE, driver visits the collect node."""
+    d = _make_driver()
+    j = _make_collect("J1", LOC_A)
+    result = solve_circuit(_make_instance([d], [j]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 1
+    assert result.assignments[0].job_id == "J1"
+
+
+def test_single_deliver_with_depot():
+    """One deliver job — driver must go via depot_pickup to get a van.
+    Only feasible if a depot exists."""
+    d = _make_driver()
+    j = _make_deliver("J1", LOC_A, vehicle_reg="VAN1")
+    depot = _make_storage()
+    result = solve_circuit(_make_instance([d], [j], [depot]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 1
+
+
+def test_collect_then_deliver_chains():
+    """Collect + matching deliver — solver should chain them (cheapest path)."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3",
+                       window_start=480, window_end=540)
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
+                       window_start=600, window_end=700)
+    result = solve_circuit(_make_instance([d], [j1, j2]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 2
+    # Verify ordering: collect before deliver
+    starts = {a.job_id: a.start_time_t for a in result.assignments}
+    assert starts["J1"] < starts["J2"]
+
+
+def test_two_collects_need_depot():
+    """Two collects, no delivers — driver must visit depot between them.
+    Without a depot, only one can be done (the other requires a depot drop)."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", window_start=480, window_end=540)
+    j2 = _make_collect("J2", LOC_B, vehicle_reg="VAN2", window_start=700, window_end=800)
+    # Without depot: INFEASIBLE (can't do two collects — no arc COLLECT->COLLECT)
+    # But we have two drivers to make it feasible without depot
+    d2 = _make_driver("D2")
+    result_no_depot = solve_circuit(_make_instance([d, d2], [j1, j2]))
+    assert result_no_depot.status in ("OPTIMAL", "FEASIBLE")
+    # With one driver and a depot: also FEASIBLE
+    depot = _make_storage()
+    result_depot = solve_circuit(_make_instance([d], [j1, j2], [depot]))
+    assert result_depot.status in ("OPTIMAL", "FEASIBLE")
+
+
+def test_multi_driver_assignment():
+    """Two jobs, two drivers — both assigned."""
+    d1 = _make_driver("D1")
+    d2 = _make_driver("D2")
+    j1 = _make_collect("J1", LOC_A, window_start=480, window_end=540)
+    j2 = _make_collect("J2", LOC_B, window_start=480, window_end=540)
+    result = solve_circuit(_make_instance([d1, d2], [j1, j2]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 2
+
+
+# --- Vehicle custody ---
+
+def test_no_double_collect_one_driver():
+    """One driver, two collects, no depot — one driver can only do one collect.
+    The second must go to another driver."""
+    d1 = _make_driver("D1")
+    d2 = _make_driver("D2")
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", window_start=480, window_end=540)
+    j2 = _make_collect("J2", LOC_B, vehicle_reg="VAN2", window_start=480, window_end=540)
+    # No depot — can't park between collects
+    result = solve_circuit(_make_instance([d1, d2], [j1, j2]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 2
+    # Each driver does exactly one job
+    drivers_used = {a.driver_id for a in result.assignments}
+    assert len(drivers_used) == 2
+
+
+def test_collect_deliver_collect_feasible_with_depot():
+    """Collect -> Deliver -> Collect is feasible (driver drops van, takes transit, collects another)."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3",
+                       window_start=480, window_end=540)
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
+                       window_start=600, window_end=700)
+    j3 = _make_collect("J3", LOC_A, vehicle_reg="VAN2", group="V3",
+                       window_start=800, window_end=900)
+    result = solve_circuit(_make_instance([d], [j1, j2, j3]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 3
+    starts = {a.job_id: a.start_time_t for a in result.assignments}
+    assert starts["J1"] < starts["J2"] < starts["J3"]
+
+
+def test_shift_span_limit():
+    """Shift span exceeding max_hours_per_day is infeasible."""
+    d = _make_driver(max_hours=40)  # 40 minutes max
+    # Job at 480: transit out=30min, return driving=20min → min span=50 > 40
+    j = _make_collect("J1", LOC_A, window_start=480, window_end=540)
+    result = solve_circuit(_make_instance([d], [j]))
+    assert result.status == "INFEASIBLE"
+
+
+# --- TBA vehicle assignment ---
+
+def test_tba_deliver_from_depot():
+    """TBA deliver job — solver picks a depot vehicle and routes through depot_pickup."""
+    d = _make_driver()
+    j = _make_deliver("J1", LOC_A, vehicle_reg=None, group="V3",
+                      window_start=480, window_end=700)
+    depot = _make_storage()
+    v = Vehicle(reg="VAN1", group="V3", current_location=LOC_DEPOT,
+                available_from=date(2025, 12, 8), available_from_t=0)
+    result = solve_circuit(_make_instance([d], [j], [depot], [v]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 1
+
+
+def test_tba_deliver_from_collect_chain():
+    """TBA deliver sourced from a collect chain — no depot vehicle needed."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3",
+                       window_start=480, window_end=540)
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg=None, group="V3",
+                       window_start=600, window_end=800)
+    result = solve_circuit(_make_instance([d], [j1, j2]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 2
+
+
+def test_tba_no_source_infeasible():
+    """TBA deliver with no depot vehicle and no matching collect — INFEASIBLE."""
+    d = _make_driver()
+    j = _make_deliver("J1", LOC_A, vehicle_reg=None, group="V3",
+                      window_start=480, window_end=700)
+    # No depot, no vehicles, no collects
+    result = solve_circuit(_make_instance([d], [j]))
+    assert result.status == "INFEASIBLE"
