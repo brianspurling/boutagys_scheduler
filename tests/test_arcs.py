@@ -35,12 +35,18 @@ def _make_job(
     window_start: int = 480, window_end: int = 600,
     vehicle_reg: str | None = None,
 ) -> Job:
+    is_collect = (action == ActionType.COLLECT)
     return Job(
         job_id=job_id, book_no="", order_ref="", rental_no="",
         book_name="", book_status="",
         action=action, scheduled_date=sched_date,
         scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
-        time_offset_minutes=540, window_start_t=window_start, window_end_t=window_end,
+        time_offset_minutes=540,
+        earliest_departure_t=window_start if is_collect else None,
+        grace_end_t=window_end if is_collect else None,
+        same_day_start_t=window_start,
+        same_day_end_t=window_end,
+        deadline_t=None if is_collect else window_end,
         vehicle_reg=vehicle_reg, vehicle_group=group,
         target_location=loc, notes="",
     )
