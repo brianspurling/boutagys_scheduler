@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Boutagy's Schedule Report</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚐</text></svg>">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -185,6 +186,16 @@
 
   .tba { color: #b45309; font-style: italic; }
 
+  .unassigned-warning {
+    color: #c0392b;
+    font-weight: 700;
+  }
+
+  tr.row-unassigned td {
+    background: #fff0f0 !important;
+    border-left: 3px solid #c0392b;
+  }
+
   /* ---- DRIVER ROUTE TIMELINE ---- */
   .route {
     padding: 8px 0 4px 0;
@@ -216,6 +227,7 @@
   }
 
   .route-dot.home    { border-color: #64748b; background: #64748b; }
+  .route-dot.depot   { border-color: #7c3aed; background: #ede9fe; }
   .route-dot.collect { border-color: #c0392b; background: #fee2e2; }
   .route-dot.deliver { border-color: #27ae60; background: #d1fae5; }
 
@@ -237,15 +249,17 @@
     margin-top: 1px;
   }
 
-  .route-node-sub .book-ref {
-    color: #888;
-    margin-left: 6px;
+  .book-ref a {
+    color: #aaa;
+    text-decoration: none;
+    border-bottom: none;
   }
+  .book-ref a:hover { color: #888; text-decoration: underline; }
 
   /* the vertical line + leg label between nodes */
   .route-leg {
     display: flex;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 10px;
     min-height: 36px;
   }
@@ -273,7 +287,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 0;
+    padding: 10px 0 16px 0;
     color: #555;
     font-size: 11px;
   }
@@ -332,9 +346,93 @@
     border-color: #93c5fd;
   }
 
+  /* ---- DRIVER SUMMARY CHART ---- */
+  .summary-chart {
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    padding: 12px 16px;
+  }
+
+  .summary-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .summary-row:hover { background: #f0f4f8; }
+  .summary-row.idle { opacity: 0.45; }
+
+  .summary-row-name {
+    width: 110px;
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #333;
+  }
+  .summary-row.idle .summary-row-name { color: #999; font-weight: 400; }
+
+  .summary-row-track {
+    flex: 1;
+    height: 18px;
+    background: #f1f5f9;
+    border-radius: 3px;
+    overflow: hidden;
+    display: flex;
+  }
+
+  .summary-bar-collect {
+    height: 100%;
+    background: #e74c3c;
+    opacity: 0.75;
+  }
+
+  .summary-bar-deliver {
+    height: 100%;
+    background: #27ae60;
+    opacity: 0.75;
+  }
+
+  .summary-row-count {
+    width: 28px;
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: #444;
+    text-align: left;
+  }
+  .summary-row.idle .summary-row-count { color: #bbb; }
+
   .postcode-link {
     font-weight: 600;
     font-size: inherit;
+  }
+
+  .kml-btn {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: 1px solid #c0392b;
+    background: #fff0f0;
+    color: #c0392b;
+    cursor: pointer;
+  }
+  .kml-btn:hover { background: #fee2e2; }
+
+  /* plain hyperlink — no colour change, no underline */
+  a.plain-link {
+    color: inherit;
+    text-decoration: none;
+  }
+  a.plain-link:hover {
+    text-decoration: underline;
   }
 </style>
 </head>
@@ -342,6 +440,11 @@
 
 <h1>Boutagy's Schedule Report</h1>
 <div class="subtitle" id="report-subtitle">Loading…</div>
+
+<section id="section-summary">
+  <h2>Driver Summary</h2>
+  <div id="driver-summary"></div>
+</section>
 
 <section id="section-drivers">
   <h2>Drivers</h2>
@@ -406,173 +509,11 @@ const VEHICLE_STORAGE = {
   'YS23PLJ': 'SW13 9SA',
 };
 
-// ─── RAW CSV (embedded at report-generation time) ───────────────────────────
-const SCHEDULE_CSV = `Book No.,Order ref:,Rental No.,Book Name,Book Status,Date,Time,Action,Reg No.,Supp'd Grp,Drivers,Delivery,Collection,Notes
-#35937429,NW94402872,8073133,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,09:00,Collect,SM73ZRL,V2,Hesham,TW11 8QA,TW11 8QA,
-,NW667AFF49,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:30,Deliver,,V2,,KT6 7NS,KT6 7NS,
-,,,,,,,,,,,,,
-#35995475,NW17C28C44,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:00,Deliver,BC23OFJ,V3,Dinis,GU22 7NJ,GU22 7NJ,FIND A VAN!!
-#35793063,NWA3F5FF35,8073079,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,CA24FVZ,A.M3,Chris Nobes,BH23 5LJ*PRE-DELIVERY*,BH23 5LJ,
-#36001565,NW621D1B94,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,17:00,Deliver,,A.M1,,BH25 5BT,BH25 5BT,MUST BE MANUAL
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35916771,NW9949E532,8073055,NATIONWIDE HIRE UK,ON HIRE,06/12/2025,08:30,Collect,WU24DLJ,V75BT,,TW14 0RX,TW14 0RX,
-#35666720,NW6EBF5386,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,WU24DLO,V75BT,Hesham,UB5 5AW,UB5 5AW,USE RRV
-#35506851,,8073045,QDRIVE PERFORMANCE,ON HIRE,05/12/2025,10:00,Collect,OU72VPR,V5,,UB7 0LQ,UB7 0LQ,
-#35752144,NW362F4910,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,14:00,Deliver,ML23LGW,V5,Jim Lynch,SE10 0EF,SE10 0EF,
-#14951424,4CF30C18,8044193,NATIONWIDE HIRE UK,ON HIRE,28/11/2025,16:30,Collect,CA24AWH,V3,,SE15 5TJ,SE15 5TJ,
-#35893131,NW2FBE2420,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,16:00,Deliver,CA24AWJ,V3,Kenneth,B93 9PS*PRE-DELIVERY*,B93 9PS,at Putney
-#35707611,NWBA1CDF69,8072841,NATIONWIDE HIRE UK,ON HIRE,28/11/2025,18:00,Collect,SL70LDV,C.F4,,B92 0AE***TOWBAR***,B92 0AE - EXT BEFORE,04/12/2025 (mo) 1315 Chasing Collection of the Vehicle
-#35990436,NW01052883,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,17:30,Deliver,YP71VGZ,C.F4,Dean,GL15 6BB,GL15 6BB,MOT due
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35732685,NW60F2F813,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,MK22EEA,V3,Aaron Day,ME17 4HW,ME17 4HW,FELTHAM
-#35329095,NW6D805830,8073122,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,10:00,Collect,BC23OFR,V3,Aaron Day,ME18 5HA,ME18 5HA,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35826739,NW95007D49,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,BJ23XKS,D.B9,Aaron Day,TN17 4DN,TN17 4DN,FELTHAM
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35885448,NW0EE68549,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,CK21YPD,V3,Dean,SP4 0ES,SP4 0ES,FELTHAM
-#35223620,NW58025E50,8072336,NATIONWIDE HIRE UK,ON HIRE,03/11/2025,12:00,Collect,CJ23VZV,V1,,SP4 7FG,SP4 7FG,"03/11/2025 1523 [JET]: As not collected, van now moved to public rosd outside 17 Kitchenor Road, Amesbury SP4 7AA.. Keys on top of nearside front tyre"
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35873727,NW2A0B0054,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,YP21XGZ,C.F4,Simon,RG24 8FW,RG24 8FW,at Paice EML on
-#35612840,NW6ECDE421,8072875,NATIONWIDE HIRE UK,ON HIRE,28/11/2025,08:30,Collect,BK22YWV,V3,,RG20 9XN*REHIRE*,RG20 9XN,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35991493,NWB57DF366,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,WN21UHB,V5TDC,,SA7 0AP,SA7 0AP,at Putney
-,,,,,,,,,,,,,
-#35887276,NW9171E646,8073053,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,BW23VXP,V4,Hesham,NW4 2PN,NW4 2PN,
-#35927227,NWE5C06141,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:00,Deliver,BC23KXF,V3,Jim Lynch,EC1Y 2BQ,EC1Y 2BQ,COLL PO12 3UB
-,,,,,,,,,,,,,
-#35979670,NW23AE6080,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,PO69XHZ,VH44T,Simon,RG40 3BU,RG40 3BU,SORN Nottingham
-#35826723,NWEB5ED248,3008658,NATIONWIDE HIRE UK,ON HIRE,05/12/2025,08:30,Collect,YT68ECD,VH18B,,NG15 7TP,RG40 3LY,same place as above
-,,,,,,,,,,,,,
-#35887271,NW9C239A46,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:00,Deliver,MK72FWE,V3,Jim Lynch,E17 6AL,E17 6AL,at Putney
-#35779477,NW801FF670,8072931,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,HK23DWU,V2,Jim Lynch,E11 4EP,E11 4EP,
-,NW951A4B53,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,13:00,Deliver,,V2,,NW2 2EB,NW2 2EB,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35916819,NWF823CA40,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,09:00,Deliver,HG21EZB,E.A17>D.B9A,Mateusz,PO3 5JP,PO3 5JP,FELTHAM
-#35811898,NWD3F64888,6028825,NATIONWIDE HIRE UK,ON HIRE,06/12/2025,08:30,Collect,BC23KXF,V3,,PO12 3UB,PO12 3UB,06/12/2025 0820 [ED]: FRONT TYRE IS TOTALLY FLAT - DIAL-A-TYRE GOSPORT GOING OUT ON MONDAY
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35843832,NWA00BF197,8072980,NATIONWIDE HIRE UK,ON HIRE,06/12/2025,12:00,Collect,YS23PUF,V5D,,HP18 9UB,HP18 9UB,
-#35927198,NW5E258428,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,YS23PUF,V5D,Dean,SO51 9BE,SO51 9BE,COLL HP18 9UB
-,,,,,,,,,,,,,
-#35916813,NWE0E6DA37,8073072,NATIONWIDE HIRE UK,ON HIRE,04/12/2025,17:30,Collect,YS23PVJ,V5D,,RM19 1GD,RM19 1GD,
-#35937464,NWB1F01010,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,08:30,Deliver,YS23PLJ,V5D,Kasia,MK6 1NE,MK6 1NE,at Putney
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35979693,NW23BEDA13,,NATIONWIDE HIRE UK,BOOKING,08/12/2025,15:00,Deliver,MJ24NYM,V5D,Hesham,BR8 8DX,BR8 8DX,extended
-,,,,,,,,,,,,,
-#35978048,,,ORESCANIN,BOOKING,08/12/2025,12:00,,MW73GVO,V4,,,,CF 06/12 MW73GVU RTN IN CARLTON SUNDAY
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35740690,NW7197E878,8073094,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,MK22EET,V3,Gabor Deak,B42 1ES*PRE-DELIVERY*,B42 1ES,
-#35765767,NW63B9FA45,8073119,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,BW23VVB,V4,Simon,RG12 7WZ,RG12 7WZ,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-,,,,,,,,,,,,,
-#35689913,NW5A920975,6028872,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,RK21YVH,V2A,Ferdinand,OX7 5YN,OX7 5YN,
-#35887288,NW6E2DB369,8073074,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,CK23UXO,V2,Gabor Deak,B31 5BS*PRE-DELIVERY*,B31 5BS,
-#35885410,NWB29F3793,6028860,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,WR22XKV,D.B9A,,TA3 5JW*PRE-DELIVERY*,TA3 5JW,
-#35874233,NW9D95E367,8073061,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,BK71HRZ,V2,,TA2 6LY*PRE-DELIVERY*,TA2 6LY,
-#35752138,NWC9419424,8073132,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,OU72VPT,V5,Dalibor,CB7 4RE*PRE-DELIVERY*,CB7 4RE,
-#35873713,NWFA48FD41,8073114,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,BJ73DGF,V3,Jassim,PE13 4JW*PRE-DELIVERY*EU*,PE13 4JW,
-#35885441,NW3CABA329,8073115,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,MD72DZA,V5,,CF14 4EJ*PRE-DELIVERY*,CF14 4EJ,
-#35873720,NW7A9EC097,6028869,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,BX25SKJ,E.A17,Jim Lynch,IG5 0BP**PREDEL**,IG5 0BP,
-#35897744,NWB1A05E23,6028867,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,CK71MYN,V2,Lourens,SN16 9QL*PRE-DELIVERY*,SN16 9QL,
-#35666759,NW3935BE32,8073076,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,KU18EEA,VH18B,Shaun,CA4 8QD*PRE-DELIVERY*,TN25 4HF,
-#35659101,NWDCA3B582,6028783,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,OU72VPD,V5,Dinis,SW19 8HQ,SW19 8HQ - EXT BEFORE,
-#35836672,NW77BF1461,8073108,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,HN72WXE,V5,Kenneth,OX3 9LQ*PRE-DELIVERY*,OX3 9LQ,
-#35843822,NWEEA20B35,8073031,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,BJ71CSO,V2,,NP7 6LG,NP7 6LG,
-#35910140,NWD3406D64,8073077,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,LN24OKF,V4,Viktor,WD6 4RN,WD6 4RN,
-#35897796,NWE036F567,8073135,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,HN73PJY,E.B17,,CF32 8TA,CF32 8TA,
-#35916797,NW2BDD6D77,8073136,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:30,Collect,MW73GVG,V4,Attila,HR2 6JU,HR2 6JU,
-,,,,,,,,,,,,,
-#35897776,NW7224DD20,8073030,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,08:45,Collect,CF24LUD,C.F3,Dave,CM16 7PS,CM16 7PS - EXT BEFORE,
-#35811886,NW731FCE42,8073104,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,09:00,Collect,CK71MYL,V2,Dave,IG7 6ET,IG7 6ET,
-#34909574,NW4D2D7E16,8073143,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,09:00,Collect,CA24AWJ,V3,Sebastian,BR2 8LH,BR2 8LH,
-,,,,,,,,,,,,,
-#35836667,NW13872C85,8073111,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,09:30,Collect,RA73UDK,V2A,Sebastian,W13 9DS,W13 9DS,
-,,,,,,,,,,,,,
-#35772913,NWF3D00876,8073148,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,10:00,Collect,MJ23NTE,V5,Viktor,SW6 3NN,SW6 3NN,
-#35703901,NW94E96447,8072997,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,10:00,Collect,ML23LGW,V5,Hesham,TW14 0HS,TW14 0HS,
-#35807695,NW71EBC539,8073069,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,10:30,Collect,BJ23XVF,D.B9A,Kasia,PE19 8JH*PRE-DELIVERY*,PE19 8JH,
-#35818685,NW802B1B92,8073113,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,10:30,Collect,HN73PKK,E.B17,Kasia,PE19 8TP,PE19 8TP,
-#35353654,NW4A680C57,8072555,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,11:30,Collect,WN21UGZ,V5TDC,Chris Nobes,SO18 5HU,SO18 5HU - EXT BEFORE,
-#35683080,NW6EE92288,8073067,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,11:45,Collect,BJ23KAO,D.B9A,Gabor Deak,DY2 8UB,DY2 8UB,
-#35877181,NWD5584568,8073029,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,12:00,Collect,CF21RVL,V2,Attila,NP7 6LG,NP7 6LG,
-#35451807,NW894E9574,8072534,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,12:00,Collect,YF24ASO,V5D,Sebastian,HA7 1QA,HA7 1QA - EXT BEFORE,
-#35877138,NW3A90EE42,8073016,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,12:00,Collect,CK74EWU,C.F3,Lourens,OX29 8FX,OX29 8FX,
-#35960046,NW82DAFD63,8073126,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,12:00,Collect,LN24CWX,V4,Jim Lynch,IG5 0PU,IG5 0PU,
-#35169779,NW60F43539,8073120,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,13:30,Collect,MF74OHL,V4A,Simon,SO51 7NR,SO51 7NR,
-#35937452,NW1431AD36,8073125,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,15:00,Collect,SM73ZRJ,V2,Aaron Day,CT18 7DN*REHIRE*,CT18 7DN,
-#35901653,397919,8073044,ASSURED VEHICLE RENTALS,ON HIRE,08/12/2025,15:00,Collect,LD23ZUS,V1A,Shaun,SS16 4TJ,SS16 4TJ,
-#35873675,NWB8F10323,8073014,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,16:30,Collect,OU72VSP,V5,Kasia,N16 5LG,N16 5LG,
-#35877160,NW1AB9DF97,8073052,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,16:30,Collect,BK73HJC,V3,Jim Lynch,N10 1DU,N10 1DU,
-#35910134,NW2BD63D49,8073042,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,17:00,Collect,SM73ZRF,V2,Attila,B63 2LT,B63 2LT - EXT BEFORE,
-#35745047,NW08BD5472,8073097,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,17:30,Collect,HV23ZXK,E.B17,Simon,RG21 5UH,RG21 5UH,
-#24674678,378768,8059339,ASSURED VEHICLE RENTALS,ON HIRE,08/12/2025,17:30,Collect,LB23ESJ,V1A,,ME4 4SR,TBA,
-#35683043,NW3DEF3442,6028856,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,17:30,Collect,WU24CYV,V75BT,Sebastian,BN12 6HG,BN12 6HG,
-#35990443,NWCA2AC248,8073134,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,17:30,Collect,LD70VBG,C.F4,Dave,PE12 9AG,PE12 9AG,
-#35302137,NW384ED474,6028661,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,18:00,Collect,HK71YTJ,V5D,Jim Lynch,HA1 4TY,HA1 4TY,
-#35854119,NW59B1AA26,6028846,NATIONWIDE HIRE UK,ON HIRE,08/12/2025,18:00,Collect,KV73AOU,C.F4,Mateusz,BS8 1HP,BS8 1HP - EXT BEFORE,
-HG21EZB,,,,,,,,,,,,,`;
-
-// ─── CSV PARSER ─────────────────────────────────────────────────────────────
-function parseCSV(text) {
-  const lines = text.split('\n');
-  const headers = splitCSVLine(lines[0]);
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const vals = splitCSVLine(line);
-    // Skip blank rows (all empty after splitting)
-    if (vals.every(v => !v.trim())) continue;
-    const obj = {};
-    headers.forEach((h, idx) => { obj[h.trim()] = (vals[idx] || '').trim(); });
-    rows.push(obj);
-  }
-  return rows;
-}
-
-function splitCSVLine(line) {
-  const result = [];
-  let inQuote = false, cur = '';
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"' && !inQuote) { inQuote = true; }
-    else if (ch === '"' && inQuote) { inQuote = false; }
-    else if (ch === ',' && !inQuote) { result.push(cur); cur = ''; }
-    else { cur += ch; }
-  }
-  result.push(cur);
-  return result;
-}
-
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function bookingId(row, idx) {
-  return row['Book No.'] || row['Order ref:'] || ('row-' + idx);
-}
 
 function anchorId(type, key) {
   // type: 'booking' | 'driver' | 'vehicle'
@@ -588,7 +529,7 @@ function driverLink(name) {
 function vehicleLink(reg) {
   if (!reg) return '<span class="tba">TBA</span>';
   const id = anchorId('vehicle', reg);
-  return `<a class="ref" href="#${id}" onclick="jumpTo('vehicle','${CSS.escape(reg)}')">${esc(reg)}</a>`;
+  return `<a class="plain-link" href="#${id}" onclick="jumpTo('vehicle','${CSS.escape(reg)}')">🚐 ${esc(reg)}</a>`;
 }
 
 function bookingLink(bookNo, label) {
@@ -622,51 +563,104 @@ function jumpToBooking(bookNo) {
   el.classList.add('highlight-flash');
 }
 
-// ─── SOLVER ROUTE DATA (populated by fetch if schedule.json is present) ──────
-// Keyed by driver_name -> route object from schedule.json
-let SOLVER_ROUTES = {};
-
 // ─── MAIN ────────────────────────────────────────────────────────────────────
-// Try to load schedule.json for solver-accurate route data, then render.
+// Load schedule.json — the sole source of truth. Fail loudly if missing.
 fetch('schedule.json')
-  .then(r => r.ok ? r.json() : null)
-  .catch(() => null)
-  .then(json => {
-    if (json && json.driver_routes) {
-      for (const route of json.driver_routes) {
-        SOLVER_ROUTES[route.driver_name] = route;
-      }
-    }
-    main();
+  .then(r => {
+    if (!r.ok) throw new Error('schedule.json not found (HTTP ' + r.status + ')');
+    return r.json();
+  })
+  .then(json => main(json))
+  .catch(err => {
+    document.getElementById('report-subtitle').textContent = 'Error: ' + err.message;
+    document.getElementById('drivers-accordion').innerHTML =
+      '<div style="padding:12px;color:#c0392b">Could not load schedule.json. ' +
+      'Serve this file from a local HTTP server in the same directory as schedule.json.</div>';
   });
 
-function main() {
-  const allRows = parseCSV(SCHEDULE_CSV);
+function main(json) {
+  // Build a driver-name → route map from driver_routes
+  const SOLVER_ROUTES = {};
+  for (const route of (json.driver_routes || [])) {
+    SOLVER_ROUTES[route.driver_name] = route;
+  }
 
-  // Filter to rows that look like actual bookings (have at least a date or action)
-  const rows = allRows.filter(r => r['Date'] || r['Action']);
+  // Build a job-id → driver-name map from driver_routes legs
+  const jobDriverMap = {};
+  for (const route of (json.driver_routes || [])) {
+    for (const leg of (route.legs || [])) {
+      if (leg.job_id) jobDriverMap[leg.job_id] = route.driver_name;
+    }
+  }
 
-  // Collect unique dates for subtitle
-  const dates = [...new Set(rows.map(r => r['Date']).filter(Boolean))].sort();
-  document.getElementById('report-subtitle').textContent =
-    rows.length + ' jobs · ' + dates.join(', ');
+  // Flatten jobs object to array, enriched with driver name
+  const jobList = Object.values(json.jobs || {}).map(j => ({
+    ...j,
+    driver_name: jobDriverMap[j.job_id] || '',
+  }));
 
   // Index by driver and vehicle for accordion sections
-  const byDriver = {};   // name -> [row, ...]
-  const byVehicle = {};  // reg -> [row, ...]
+  const byDriver = {};   // name -> [job, ...]
+  const byVehicle = {};  // reg -> [job, ...]
 
-  rows.forEach((r, idx) => {
-    const driver = r['Drivers'];
-    const reg = r['Reg No.'];
-    if (driver) {
-      if (!byDriver[driver]) byDriver[driver] = [];
-      byDriver[driver].push({ row: r, idx });
+  for (const route of (json.driver_routes || [])) {
+    byDriver[route.driver_name] = [];
+  }
+  jobList.forEach(j => {
+    if (j.driver_name) {
+      if (!byDriver[j.driver_name]) byDriver[j.driver_name] = [];
+      byDriver[j.driver_name].push(j);
     }
-    if (reg) {
-      if (!byVehicle[reg]) byVehicle[reg] = [];
-      byVehicle[reg].push({ row: r, idx });
+    if (j.vehicle_reg) {
+      if (!byVehicle[j.vehicle_reg]) byVehicle[j.vehicle_reg] = [];
+      byVehicle[j.vehicle_reg].push(j);
     }
   });
+
+  // Unassigned job set
+  const unassignedIds = new Set(json.unassigned_job_ids || []);
+
+  // Subtitle
+  const dates = [...new Set(jobList.map(j => j.scheduled_date).filter(Boolean))].sort();
+  const driverCount = Object.keys(byDriver).length;
+  const status = (json.status || '').replace(/feasible/gi, '').trim().replace(/\s+/g, ' ') || null;
+  const subtitleBase = jobList.length + ' jobs · ' + driverCount + ' driver' + (driverCount !== 1 ? 's' : '') +
+    ' · ' + dates.join(', ') +
+    ' · solved in ' + (json.solve_time_seconds != null ? Math.round(json.solve_time_seconds) : '?') + 's' + (status ? ' (' + status + ')' : '');
+  const subtitleEl = document.getElementById('report-subtitle');
+  subtitleEl.textContent = subtitleBase;
+  if (unassignedIds.size > 0) {
+    const warn = document.createElement('span');
+    warn.className = 'unassigned-warning';
+    warn.textContent = ' ⚠ ' + unassignedIds.size + ' unassigned job' + (unassignedIds.size !== 1 ? 's' : '') + '!';
+    subtitleEl.appendChild(warn);
+  }
+
+  // ── 0. Driver summary chart ──────────────────────────────────────────────
+  const allDriverNames = Object.keys(DRIVERS_DATA).sort((a, b) =>
+    (byDriver[b] || []).length - (byDriver[a] || []).length);
+  const maxJobs = Math.max(1, ...allDriverNames.map(n => (byDriver[n] || []).length));
+  let summaryHTML = '<div class="summary-chart">';
+  allDriverNames.forEach(name => {
+    const jobs = byDriver[name] || [];
+    const n = jobs.length;
+    const idle = n === 0;
+    const collectCount = jobs.filter(j => j.action === 'collect').length;
+    const deliverCount = jobs.filter(j => j.action === 'deliver').length;
+    const collectPct = (collectCount / maxJobs) * 100;
+    const deliverPct = (deliverCount / maxJobs) * 100;
+    summaryHTML += `
+      <div class="summary-row${idle ? ' idle' : ''}" onclick="jumpTo('driver','${CSS.escape(name)}')">
+        <div class="summary-row-name" title="${esc(name)}">${esc(name)}</div>
+        <div class="summary-row-track">
+          <div class="summary-bar-collect" style="width:${collectPct}%"></div>
+          <div class="summary-bar-deliver" style="width:${deliverPct}%"></div>
+        </div>
+        <div class="summary-row-count">${idle ? '' : n}</div>
+      </div>`;
+  });
+  summaryHTML += '</div>';
+  document.getElementById('driver-summary').innerHTML = summaryHTML;
 
   // ── 1. Drivers accordion ─────────────────────────────────────────────────
   const driverNames = Object.keys(byDriver).sort();
@@ -675,8 +669,8 @@ function main() {
   driverNames.forEach(name => {
     const jobs = byDriver[name];
     const id = anchorId('driver', name);
-    const collectCount = jobs.filter(j => j.row['Action'] === 'Collect').length;
-    const deliverCount = jobs.filter(j => j.row['Action'] === 'Deliver').length;
+    const collectCount = jobs.filter(j => j.action === 'collect').length;
+    const deliverCount = jobs.filter(j => j.action === 'deliver').length;
 
     driversHTML += `<div class="accordion-item" id="${id}">`;
     driversHTML += `<div class="accordion-header" onclick="toggleAccordion(this)">
@@ -689,7 +683,7 @@ function main() {
       </span>
     </div>`;
     driversHTML += `<div class="accordion-body">`;
-    driversHTML += buildDriverRoute(name, jobs);
+    driversHTML += buildDriverRouteFromSolver(SOLVER_ROUTES[name]);
     driversHTML += `</div></div>`;
   });
 
@@ -703,22 +697,22 @@ function main() {
   vehicleRegs.forEach(reg => {
     const jobs = byVehicle[reg];
     const id = anchorId('vehicle', reg);
-    const groups = [...new Set(jobs.map(j => j.row["Supp'd Grp"]).filter(Boolean))].join(', ');
-    const collectCount = jobs.filter(j => j.row['Action'] === 'Collect').length;
-    const deliverCount = jobs.filter(j => j.row['Action'] === 'Deliver').length;
+    const group = jobs[0] ? jobs[0].vehicle_group : '';
+    const collectCount = jobs.filter(j => j.action === 'collect').length;
+    const deliverCount = jobs.filter(j => j.action === 'deliver').length;
 
     vehiclesHTML += `<div class="accordion-item" id="${id}">`;
     vehiclesHTML += `<div class="accordion-header" onclick="toggleAccordion(this)">
       <span class="accordion-toggle">&#9658;</span>
       <span class="accordion-title">${esc(reg)}</span>
       <span class="accordion-meta">
-        ${groups ? esc(groups) + ' · ' : ''}${jobs.length} job${jobs.length !== 1 ? 's' : ''}
+        ${group ? esc(group) + ' · ' : ''}${jobs.length} job${jobs.length !== 1 ? 's' : ''}
         <span class="badge badge-collect">${collectCount}C</span>
         <span class="badge badge-deliver">${deliverCount}D</span>
       </span>
     </div>`;
     vehiclesHTML += `<div class="accordion-body">`;
-    vehiclesHTML += buildVehicleRoute(reg, jobs);
+    vehiclesHTML += buildVehicleRouteFromSolver(reg, jobs);
     vehiclesHTML += `</div></div>`;
   });
 
@@ -727,41 +721,47 @@ function main() {
 
   // ── 3. Bookings table ─────────────────────────────────────────────────────
   const bookingCols = [
-    { label: 'Book No.',     key: 'Book No.' },
-    { label: 'Order Ref',    key: 'Order ref:' },
-    { label: 'Status',       key: 'Book Status' },
-    { label: 'Date',         key: 'Date' },
-    { label: 'Time',         key: 'Time' },
-    { label: 'Action',       key: 'Action' },
-    { label: 'Vehicle',      key: 'Reg No.' },
-    { label: 'Group',        key: "Supp'd Grp" },
-    { label: 'Driver',       key: 'Drivers' },
-    { label: 'Delivery PC',  key: 'Delivery' },
-    { label: 'Notes',        key: 'Notes' },
+    { label: 'Book No.',    key: 'book_no' },
+    { label: 'Date',        key: 'scheduled_date' },
+    { label: 'Time',        key: 'scheduled_time' },
+    { label: 'Action',      key: 'action' },
+    { label: 'Vehicle',     key: 'vehicle_reg' },
+    { label: 'Group',       key: 'vehicle_group' },
+    { label: 'Driver',      key: 'driver_name' },
+    { label: 'Postcode',    key: 'postcode' },
   ];
+
+  const sortedJobs = [...jobList].sort((a, b) => {
+    const ka = (a.scheduled_date || '') + ' ' + (a.scheduled_time || '');
+    const kb = (b.scheduled_date || '') + ' ' + (b.scheduled_time || '');
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
 
   let tableHTML = '<table><thead><tr>';
   tableHTML += bookingCols.map(c => `<th>${esc(c.label)}</th>`).join('');
   tableHTML += '</tr></thead><tbody>';
 
-  rows.forEach((r, idx) => {
-    const bookNo = r['Book No.'];
+  sortedJobs.forEach(j => {
+    const bookNo = j.book_no;
     const id = bookNo ? ` id="${anchorId('booking', bookNo)}"` : '';
-    const action = r['Action'] || '';
-    const actionClass = action === 'Collect' ? 'action-collect' : action === 'Deliver' ? 'action-deliver' : '';
+    const action = j.action || '';
+    const actionClass = action === 'collect' ? 'action-collect' : action === 'deliver' ? 'action-deliver' : '';
+    const isUnassigned = unassignedIds.has(j.job_id);
 
-    tableHTML += `<tr${id}>`;
+    tableHTML += `<tr${id}${isUnassigned ? ' class="row-unassigned"' : ''}>`;
     bookingCols.forEach(col => {
-      const val = r[col.key] || '';
+      const val = j[col.key] || '';
       let cell = '';
-      if (col.key === 'Book No.') {
+      if (col.key === 'book_no') {
         cell = bookNo ? `<strong>${esc(bookNo)}</strong>` : '';
-      } else if (col.key === 'Reg No.') {
+      } else if (col.key === 'vehicle_reg') {
         cell = vehicleLink(val);
-      } else if (col.key === 'Drivers') {
+      } else if (col.key === 'driver_name') {
         cell = driverLink(val);
-      } else if (col.key === 'Action') {
+      } else if (col.key === 'action') {
         cell = val ? `<span class="${actionClass}">${esc(val)}</span>` : '';
+      } else if (col.key === 'postcode') {
+        cell = val ? mapsLink(val) : '';
       } else {
         cell = esc(val);
       }
@@ -771,13 +771,95 @@ function main() {
   });
 
   tableHTML += '</tbody></table>';
-  document.getElementById('bookings-table-wrap').innerHTML = tableHTML;
+
+  // ── Unassigned KML download button ────────────────────────────────────────
+  const unassignedJobs = sortedJobs.filter(j => unassignedIds.has(j.job_id));
+  let bookingsHeader = '';
+  if (unassignedJobs.length > 0) {
+    bookingsHeader = `<div style="margin-bottom:8px">
+      <button class="kml-btn" onclick="downloadUnassignedKml()">&#11015; Download unassigned KML</button>
+    </div>`;
+  }
+
+  document.getElementById('bookings-table-wrap').innerHTML = bookingsHeader + tableHTML;
+
+  // stash for KML builder
+  window._unassignedJobs = unassignedJobs;
 }
 
+// ─── KML EXPORT ──────────────────────────────────────────────────────────────
+async function downloadUnassignedKml() {
+  const jobs = window._unassignedJobs || [];
+  if (!jobs.length) return;
+
+  const postcodes = [...new Set(jobs.map(j => j.postcode).filter(Boolean))];
+
+  // Batch geocode via postcodes.io (max 100 per request)
+  let coordMap = {};
+  try {
+    const res = await fetch('https://api.postcodes.io/postcodes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postcodes }),
+    });
+    const data = await res.json();
+    for (const r of (data.result || [])) {
+      if (r.result) coordMap[r.query] = { lat: r.result.latitude, lon: r.result.longitude };
+    }
+  } catch (e) {
+    alert('Could not geocode postcodes: ' + e.message);
+    return;
+  }
+
+  const placemarks = jobs.map(j => {
+    const coord = coordMap[j.postcode];
+    if (!coord) return '';
+    const name = esc(`${j.action === 'collect' ? 'Collect' : 'Deliver'}: ${j.vehicle_reg || 'TBA'} — ${j.postcode}`);
+    const desc = esc(`${j.book_no || ''} · ${j.vehicle_group || ''} · ${j.scheduled_time || ''}`);
+    return `  <Placemark>
+    <name>${name}</name>
+    <description>${desc}</description>
+    <Point><coordinates>${coord.lon},${coord.lat},0</coordinates></Point>
+  </Placemark>`;
+  }).filter(Boolean).join('\n');
+
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>Unassigned Jobs</name>
+${placemarks}
+</Document>
+</kml>`;
+
+  const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'unassigned_jobs.kml';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── STORAGE LOCATION LOOKUP ─────────────────────────────────────────────────
+const DEPOT_NAMES = {
+  'TW14 9DF': 'Feltham',
+  'SW15 2SW': 'Putney Head Office',
+  'SW13 9SA': 'London Wetlands Centre',
+};
+
 // ─── MAPS HELPERS ─────────────────────────────────────────────────────────────
-function mapsLink(postcode) {
+function mapsLink(postcode, label) {
   const url = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(postcode + ', UK');
-  return `<a class="ref postcode-link" href="${url}" target="_blank" rel="noopener">${esc(postcode)}</a>`;
+  const icon = label ? '🅿️' : '📍';
+  return `<a class="ref postcode-link" href="${url}" target="_blank" rel="noopener">${icon} ${esc(label || postcode)}</a>`;
+}
+
+function postcodeInlineMapsLink(postcode, homePostcode) {
+  const url = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(postcode + ', UK');
+  const label = (homePostcode && postcode === homePostcode)
+    ? `Home (${postcode})`
+    : DEPOT_NAMES[postcode] || postcode;
+  return `<a class="plain-link" href="${url}" target="_blank" rel="noopener">${esc(label)}</a>`;
 }
 
 // Build a Google Maps directions URL for a sequence of postcodes (driving mode).
@@ -794,11 +876,14 @@ function buildMapsRouteUrl(postcodes) {
 }
 
 // ─── SHARED ROUTE RENDERERS ───────────────────────────────────────────────────
+
 function renderDot(type) {
+  if (type === 'home') return `<span style="font-size:14px;line-height:1">🏠</span>`;
   return `<div class="route-dot ${type}"></div>`;
 }
 
-function renderLegConnector(mode, vehicleReg, durationMinutes) {
+
+function renderLegConnector(mode, vehicleReg, durationMinutes, fromPostcode, toPostcode, homePostcode) {
   const lineClass = mode === 'driving' ? 'driving' : 'transit';
   const modeLabel = mode === 'driving'
     ? `<span class="leg-mode driving">&#128663; driving</span>`
@@ -808,7 +893,10 @@ function renderLegConnector(mode, vehicleReg, durationMinutes) {
     : '';
   const durationTag = durationMinutes != null
     ? `<span class="leg-duration">${durationMinutes} min</span>`
-    : `<span class="leg-duration">duration unknown</span>`;
+    : '';
+  const routeTag = (fromPostcode && toPostcode)
+    ? `<span class="leg-duration">${postcodeInlineMapsLink(fromPostcode, homePostcode)} → ${postcodeInlineMapsLink(toPostcode, homePostcode)}</span>`
+    : '';
   return `
     <div class="route-leg">
       <div class="route-leg-spine"><div class="route-leg-line ${lineClass}"></div></div>
@@ -816,38 +904,32 @@ function renderLegConnector(mode, vehicleReg, durationMinutes) {
         ${modeLabel}
         ${vehicleTag}
         ${durationTag}
+        ${routeTag}
       </div>
     </div>`;
 }
 
 function renderLocationNode(postcode, sublabel, dotType) {
+  const label = dotType === 'home'
+    ? `Home (${mapsLink(postcode)})`
+    : mapsLink(postcode);
   return `
     <div class="route-node">
       <div class="route-node-spine">${renderDot(dotType)}</div>
       <div class="route-node-content">
-        <div class="route-node-label">${mapsLink(postcode)}</div>
-        <div class="route-node-sub">${sublabel}</div>
+        <div class="route-node-label">${label}</div>
+        ${sublabel ? `<div class="route-node-sub">${sublabel}</div>` : ''}
       </div>
     </div>`;
 }
 
 // ─── BUILD DRIVER ROUTE TIMELINE ─────────────────────────────────────────────
-function buildDriverRoute(name, csvJobs) {
-  // If solver route data is available for this driver, use it.
-  if (SOLVER_ROUTES[name]) {
-    return buildDriverRouteFromSolver(SOLVER_ROUTES[name]);
-  }
-  return buildDriverRouteFromCSV(name, csvJobs);
-}
-
-// ── Route from solver JSON ────────────────────────────────────────────────────
 function buildDriverRouteFromSolver(route) {
   const homePostcode = route.home_postcode;
 
   // Collect all postcodes in order for the Maps route URL
   const allPostcodes = [homePostcode];
   for (const leg of route.legs) {
-    if (leg.via_depot) allPostcodes.push(leg.via_depot.postcode);
     allPostcodes.push(leg.to_postcode);
   }
   // Deduplicate consecutive duplicates (e.g. home appears twice at end)
@@ -860,40 +942,77 @@ function buildDriverRouteFromSolver(route) {
   let html = `<div class="route-header"><a class="maps-route-link" href="${mapsUrl}" target="_blank" rel="noopener">&#128205; Map route</a>${mapsNote}</div>`;
   html += '<div class="route">';
 
-  html += renderLocationNode(homePostcode, 'Home', 'home');
+  html += renderLocationNode(homePostcode, '', 'home');
 
-  for (const leg of route.legs) {
+  for (let li = 0; li < route.legs.length; li++) {
+    const leg = route.legs[li];
     const job = leg.job || null;
 
-    // Does this leg go via a depot first?
-    if (leg.via_depot) {
-      const depot = leg.via_depot;
-      // Segment 1: from_postcode → depot (transit)
-      html += renderLegConnector('transit', null, depot.transit_minutes);
-      html += renderLocationNode(depot.postcode, 'Depot (pick up van)', 'home');
-      // Segment 2: depot → job postcode (driving)
-      html += renderLegConnector('driving', leg.vehicle_reg, depot.driving_minutes);
-    } else {
-      html += renderLegConnector(leg.mode, leg.vehicle_reg, leg.duration_minutes);
+    // No job — classify the leg type
+    if (!job) {
+      if (leg.to_postcode === homePostcode) {
+        // Return home leg — render connector, home node rendered after the loop
+        html += renderLegConnector(leg.mode, leg.vehicle_reg, leg.duration_minutes, leg.from_postcode, leg.to_postcode, homePostcode);
+        continue;
+      }
+      if (leg.from_postcode === leg.to_postcode) {
+        // Dwell at depot (turnaround buffer) — skip, node already rendered
+        continue;
+      }
+      // Depot leg — drop-off or pick-up
+      const depotName = leg.depot_name || leg.to_postcode;
+      const dropReg = leg.vehicle_reg || null;
+      // For pick-up legs the vehicle_reg may sit on the next leg;
+      // for drop-off legs, look ahead past any dwell to find a departing vehicle
+      let pickupReg = null;
+      if (!dropReg) {
+        pickupReg = (route.legs[li + 1] || {}).vehicle_reg || null;
+      } else {
+        // scan ahead past dwell legs at the same postcode
+        for (let ahead = li + 1; ahead < route.legs.length; ahead++) {
+          const al = route.legs[ahead];
+          if (al.from_postcode === leg.to_postcode && al.vehicle_reg) {
+            pickupReg = al.vehicle_reg;
+            break;
+          }
+          if (al.from_postcode !== leg.to_postcode) break;
+        }
+      }
+      const sublabel = dropReg && pickupReg
+        ? `Drop off ${vehicleLink(dropReg)} · Pick up ${vehicleLink(pickupReg)}`
+        : dropReg
+        ? `Drop off ${vehicleLink(dropReg)}`
+        : pickupReg
+        ? `Pick up ${vehicleLink(pickupReg)}`
+        : 'Pick up van';
+      html += renderLegConnector(leg.mode, leg.vehicle_reg, leg.duration_minutes, leg.from_postcode, leg.to_postcode, homePostcode);
+      html += `
+        <div class="route-node">
+          <div class="route-node-spine">${renderDot('depot')}</div>
+          <div class="route-node-content">
+            <div class="route-node-label">${mapsLink(leg.to_postcode, depotName)} · ${sublabel}</div>
+          </div>
+        </div>`;
+      continue;
     }
+
+    html += renderLegConnector(leg.mode, leg.vehicle_reg, leg.duration_minutes, leg.from_postcode, leg.to_postcode, homePostcode);
 
     // Job stop node
     if (job) {
       const action = job.action || '';
       const dotType = action === 'collect' ? 'collect' : action === 'deliver' ? 'deliver' : 'home';
       const actionLabel = action === 'collect'
-        ? `<span class="action-collect">Collect</span>`
+        ? `<span class="action-collect">Collect:</span>`
         : action === 'deliver'
-        ? `<span class="action-deliver">Deliver</span>`
+        ? `<span class="action-deliver">Deliver:</span>`
         : '';
       const timeLabel = job.start_time
         ? `<strong>${esc(job.start_time.slice(11))}</strong>` // HH:MM from datetime
         : job.scheduled_time
         ? `<strong>${esc(job.scheduled_time)}</strong>`
         : '';
-      const vehiclePart = leg.vehicle_reg
-        ? ` &middot; ${vehicleLink(leg.vehicle_reg)}${job.vehicle_group ? ' <span style="color:#888;font-size:10px">(' + esc(job.vehicle_group) + ')</span>' : ''}`
-        : '';
+      const vehicleReg = leg.vehicle_reg || job.vehicle_reg;
       const bookRef = job.book_no
         ? `<span class="book-ref">${bookingLink(job.book_no)}</span>`
         : '';
@@ -902,8 +1021,7 @@ function buildDriverRouteFromSolver(route) {
         <div class="route-node">
           <div class="route-node-spine">${renderDot(dotType)}</div>
           <div class="route-node-content">
-            <div class="route-node-label">${mapsLink(leg.to_postcode)}</div>
-            <div class="route-node-sub">${timeLabel} ${actionLabel}${vehiclePart}${bookRef}</div>
+            <div class="route-node-label">${actionLabel} ${vehicleReg ? vehicleLink(vehicleReg) : ''}${job.vehicle_group ? ' <span style="color:#888;font-size:10px">(' + esc(job.vehicle_group) + ')</span>' : ''} ${action === 'collect' ? 'from' : 'to'} ${mapsLink(leg.to_postcode)} @ ${timeLabel} ${bookRef}</div>
           </div>
         </div>`;
     } else {
@@ -911,148 +1029,41 @@ function buildDriverRouteFromSolver(route) {
     }
   }
 
-  html += renderLocationNode(homePostcode, 'Home', 'home');
-  html += '</div>';
-  return html;
-}
-
-// ── Route inferred from CSV only (fallback) ───────────────────────────────────
-function buildDriverRouteFromCSV(name, jobs) {
-  const info = DRIVERS_DATA[name] || {};
-  const homePostcode = info.home || '?';
-
-  function sortKey(r) {
-    const [d, m, y] = (r['Date'] || '01/01/1970').split('/');
-    return `${y}${m}${d} ${r['Time'] || '00:00'}`;
-  }
-  const sorted = [...jobs]
-    .map(j => j.row)
-    .sort((a, b) => sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0);
-
-  function jobPostcode(r) {
-    if (r['Action'] === 'Deliver') return (r['Delivery'] || r['Collection'] || '').split('*')[0].split(' - ')[0].trim();
-    return (r['Collection'] || r['Delivery'] || '').split('*')[0].split(' - ')[0].trim();
-  }
-
-  const stops = sorted.map(r => ({
-    type: (r['Action'] || '').toLowerCase(),
-    postcode: jobPostcode(r),
-    time: r['Time'] || '',
-    reg: r['Reg No.'] || '',
-    group: r["Supp'd Grp"] || '',
-    bookNo: r['Book No.'] || '',
-    notes: r['Notes'] || '',
-  }));
-
-  // Infer modes: Collect gives driver the van; Deliver hands it back.
-  const legModes = [];
-  let heldReg = null;
-  for (let i = 0; i < stops.length; i++) {
-    legModes.push({ mode: (i === 0 || !heldReg) ? 'transit' : 'driving', vehicle: heldReg });
-    if (stops[i].type === 'collect') heldReg = stops[i].reg || heldReg;
-    else if (stops[i].type === 'deliver') heldReg = null;
-  }
-  const finalLegMode = { mode: heldReg ? 'driving' : 'transit', vehicle: heldReg };
-
-  // Build Maps route URL
-  const allPostcodes = [homePostcode, ...stops.map(s => s.postcode), homePostcode];
-  const uniquePostcodes = allPostcodes.filter((p, i) => i === 0 || p !== allPostcodes[i - 1]);
-  const truncated = uniquePostcodes.length > MAPS_MAX_STOPS;
-  const mapsPostcodes = uniquePostcodes.slice(0, MAPS_MAX_STOPS);
-  const mapsUrl = buildMapsRouteUrl(mapsPostcodes);
-  const mapsNote = truncated ? ` <span class="leg-duration">(first ${MAPS_MAX_STOPS} stops)</span>` : '';
-
-  let html = `<div class="route-header"><a class="maps-route-link" href="${mapsUrl}" target="_blank" rel="noopener">&#128205; Map route</a>${mapsNote}</div>`;
-  html += '<div class="route">';
-  html += renderLocationNode(homePostcode, 'Home', 'home');
-
-  stops.forEach((stop, i) => {
-    const lm = legModes[i];
-    html += renderLegConnector(lm.mode, lm.vehicle, null);
-
-    const dotType = stop.type === 'collect' ? 'collect' : stop.type === 'deliver' ? 'deliver' : 'home';
-    const actionLabel = stop.type === 'collect'
-      ? `<span class="action-collect">Collect</span>`
-      : stop.type === 'deliver'
-      ? `<span class="action-deliver">Deliver</span>`
-      : '';
-    const timeLabel = stop.time ? `<strong>${esc(stop.time)}</strong>` : '';
-    const vehiclePart = stop.reg
-      ? ` &middot; ${vehicleLink(stop.reg)}${stop.group ? ' <span style="color:#888;font-size:10px">(' + esc(stop.group) + ')</span>' : ''}`
-      : '';
-    const bookRef = stop.bookNo ? `<span class="book-ref">${bookingLink(stop.bookNo)}</span>` : '';
-
-    html += `
-      <div class="route-node">
-        <div class="route-node-spine">${renderDot(dotType)}</div>
-        <div class="route-node-content">
-          <div class="route-node-label">${mapsLink(stop.postcode)}</div>
-          <div class="route-node-sub">${timeLabel} ${actionLabel}${vehiclePart}${bookRef}</div>
-        </div>
-      </div>`;
-  });
-
-  html += renderLegConnector(finalLegMode.mode, finalLegMode.vehicle, null);
-  html += renderLocationNode(homePostcode, 'Home', 'home');
+  html += renderLocationNode(homePostcode, '', 'home');
   html += '</div>';
   return html;
 }
 
 // ─── BUILD VEHICLE ROUTE TIMELINE ────────────────────────────────────────────
-function buildVehicleRoute(reg, jobs) {
-  // Sort by date+time
-  function sortKey(r) {
-    const [d, m, y] = (r['Date'] || '01/01/1970').split('/');
-    return `${y}${m}${d} ${r['Time'] || '00:00'}`;
-  }
-  const sorted = [...jobs]
-    .map(j => j.row)
-    .sort((a, b) => sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0);
+// jobs: array of job objects from json.jobs, each enriched with driver_name
+function buildVehicleRouteFromSolver(reg, jobs) {
+  const sorted = [...jobs].sort((a, b) => {
+    const ka = (a.scheduled_date || '') + ' ' + (a.scheduled_time || '');
+    const kb = (b.scheduled_date || '') + ' ' + (b.scheduled_time || '');
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
 
-  function jobPostcode(r) {
-    if (r['Action'] === 'Deliver') return (r['Delivery'] || r['Collection'] || '').split('*')[0].split(' - ')[0].trim();
-    return (r['Collection'] || r['Delivery'] || '').split('*')[0].split(' - ')[0].trim();
-  }
-
-  const stops = sorted.map(r => ({
-    type: (r['Action'] || '').toLowerCase(),
-    postcode: jobPostcode(r),
-    time: r['Time'] || '',
-    date: r['Date'] || '',
-    driver: r['Drivers'] || '',
-    bookNo: r['Book No.'] || '',
-    group: r["Supp'd Grp"] || '',
+  const stops = sorted.map(j => ({
+    type: j.action || '',
+    postcode: j.postcode || '',
+    time: j.scheduled_time || '',
+    driver: j.driver_name || '',
+    bookNo: j.book_no || '',
+    group: j.vehicle_group || '',
   }));
 
-  // Between a Collect and the next job, the vehicle is being driven (by whoever collected it).
-  // Between a Deliver and the next job, the vehicle is idle/parked — no active leg.
-  // We label legs with the driver who has custody.
+  // Track custody: Collect → driver has van; Deliver → van handed back
   const legModes = [];
   let currentDriver = null;
   for (let i = 0; i < stops.length; i++) {
-    if (i === 0) {
-      // Leg from storage → first job. Vehicle is driven to first job if it's a Deliver
-      // (came from depot); if first job is a Collect, the van is already at the customer.
-      // Either way: before the first job there's no active driver leg — show as idle.
-      legModes.push({ mode: 'idle', driver: null });
-    } else {
-      // After previous stop
-      legModes.push({ mode: currentDriver ? 'driving' : 'idle', driver: currentDriver });
-    }
-    // Update custody
-    if (stops[i].type === 'collect') {
-      currentDriver = stops[i].driver || null;
-    } else if (stops[i].type === 'deliver') {
-      currentDriver = null;
-    }
+    legModes.push(i === 0 ? { mode: 'idle', driver: null }
+                           : { mode: currentDriver ? 'driving' : 'idle', driver: currentDriver });
+    if (stops[i].type === 'collect') currentDriver = stops[i].driver || null;
+    else if (stops[i].type === 'deliver') currentDriver = null;
   }
-  // Final leg: after last job the vehicle is at rest (parked at last postcode)
   const finalLeg = { mode: 'idle', driver: null };
 
-  // Storage location for this vehicle (from VEHICLE_INVENTORY embedded data)
   const storagePostcode = VEHICLE_STORAGE[reg] || null;
-
-  // Build Maps URL: storage → all stop postcodes
   const allPostcodes = [
     ...(storagePostcode ? [storagePostcode] : []),
     ...stops.map(s => s.postcode),
@@ -1066,18 +1077,20 @@ function buildVehicleRoute(reg, jobs) {
   let html = `<div class="route-header"><a class="maps-route-link" href="${mapsUrl}" target="_blank" rel="noopener">&#128205; Map route</a>${mapsNote}</div>`;
   html += '<div class="route">';
 
-  // Start node: storage location or first known postcode
   const startPostcode = storagePostcode || (stops[0] ? stops[0].postcode : '?');
-  html += renderLocationNode(startPostcode, storagePostcode ? 'Storage' : 'Starting location unknown', 'home');
+  html += renderLocationNode(startPostcode, storagePostcode ? 'Storage' : 'Starting location unknown', storagePostcode ? 'depot' : 'home');
 
   function renderVehicleLeg(leg) {
     if (leg.mode === 'driving' && leg.driver) {
-      return renderLegConnector('driving', null, null).replace(
-        '</div>\n    </div>',
-        `${driverLink(leg.driver)}\n        </div>\n    </div>`
-      );
+      return `
+    <div class="route-leg">
+      <div class="route-leg-spine"><div class="route-leg-line driving"></div></div>
+      <div class="route-leg-content">
+        <span class="leg-mode driving">&#128663; driving</span>
+        ${driverLink(leg.driver)}
+      </div>
+    </div>`;
     }
-    // idle — dashed grey line, no mode pill
     return `
       <div class="route-leg">
         <div class="route-leg-spine"><div class="route-leg-line idle"></div></div>
@@ -1087,12 +1100,11 @@ function buildVehicleRoute(reg, jobs) {
 
   stops.forEach((stop, i) => {
     html += renderVehicleLeg(legModes[i]);
-
     const dotType = stop.type === 'collect' ? 'collect' : stop.type === 'deliver' ? 'deliver' : 'home';
     const actionLabel = stop.type === 'collect'
-      ? `<span class="action-collect">Collect</span>`
+      ? `<span class="action-collect">Collect:</span>`
       : stop.type === 'deliver'
-      ? `<span class="action-deliver">Deliver</span>`
+      ? `<span class="action-deliver">Deliver:</span>`
       : '';
     const timeLabel = stop.time ? `<strong>${esc(stop.time)}</strong>` : '';
     const driverPart = stop.driver ? ` &middot; ${driverLink(stop.driver)}` : '';
@@ -1102,13 +1114,11 @@ function buildVehicleRoute(reg, jobs) {
       <div class="route-node">
         <div class="route-node-spine">${renderDot(dotType)}</div>
         <div class="route-node-content">
-          <div class="route-node-label">${mapsLink(stop.postcode)}</div>
-          <div class="route-node-sub">${timeLabel} ${actionLabel}${driverPart}${bookRef}</div>
+          <div class="route-node-label">${actionLabel} ${stop.type === 'collect' ? 'from' : 'to'} ${mapsLink(stop.postcode)} @ ${timeLabel}${driverPart} ${bookRef}</div>
         </div>
       </div>`;
   });
 
-  // Final: vehicle comes to rest at last postcode
   if (stops.length) {
     html += renderVehicleLeg(finalLeg);
     html += renderLocationNode(stops[stops.length - 1].postcode, 'Resting location', 'home');
@@ -1118,50 +1128,6 @@ function buildVehicleRoute(reg, jobs) {
   return html;
 }
 
-// ─── BUILD MINI SCHEDULE TABLE ───────────────────────────────────────────────
-function buildJobsTable(jobs, perspective) {
-  // Sort by date then time
-  const sorted = [...jobs].sort((a, b) => {
-    const da = a.row['Date'] + ' ' + a.row['Time'];
-    const db = b.row['Date'] + ' ' + b.row['Time'];
-    return da < db ? -1 : da > db ? 1 : 0;
-  });
-
-  let html = '<table><thead><tr>';
-  html += '<th>Book No.</th><th>Date</th><th>Time</th><th>Action</th>';
-  if (perspective === 'driver') html += '<th>Vehicle</th><th>Group</th>';
-  if (perspective === 'vehicle') html += '<th>Driver</th>';
-  html += '<th>Location</th><th>Notes</th>';
-  html += '</tr></thead><tbody>';
-
-  sorted.forEach(({ row }) => {
-    const bookNo = row['Book No.'];
-    const action = row['Action'] || '';
-    const actionClass = action === 'Collect' ? 'action-collect' : action === 'Deliver' ? 'action-deliver' : '';
-    const location = row['Action'] === 'Deliver'
-      ? row['Delivery']
-      : row['Collection'] || row['Delivery'];
-
-    html += '<tr>';
-    html += `<td>${bookNo ? bookingLink(bookNo) : ''}</td>`;
-    html += `<td>${esc(row['Date'])}</td>`;
-    html += `<td>${esc(row['Time'])}</td>`;
-    html += `<td><span class="${actionClass}">${esc(action)}</span></td>`;
-    if (perspective === 'driver') {
-      html += `<td>${vehicleLink(row['Reg No.'])}</td>`;
-      html += `<td>${esc(row["Supp'd Grp"])}</td>`;
-    }
-    if (perspective === 'vehicle') {
-      html += `<td>${driverLink(row['Drivers'])}</td>`;
-    }
-    html += `<td>${esc(location)}</td>`;
-    html += `<td>${esc(row['Notes'])}</td>`;
-    html += '</tr>';
-  });
-
-  html += '</tbody></table>';
-  return html;
-}
 
 // ─── ACCORDION TOGGLE ────────────────────────────────────────────────────────
 function toggleAccordion(header) {
