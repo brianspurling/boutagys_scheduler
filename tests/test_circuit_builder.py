@@ -7,7 +7,10 @@ from scheduler.models import (
     Location, ProblemInstance, StorageLocation, TransitMatrix, TransitPair,
     Vehicle, VehicleJobArc, JobChainArc,
 )
-from scheduler.circuit_builder import build_driver_graph, DEPOT_DWELL_MINUTES, TURNAROUND_MINUTES
+from scheduler.circuit_builder import (
+    build_driver_graph, DEPOT_DWELL_MINUTES, TURNAROUND_MINUTES,
+    TRANSIT_WEIGHT, DRIVING_WEIGHT,
+)
 
 LOC_HOME = Location(postcode="HH1 1HH", lat=51.5, lon=-0.1)
 LOC_A = Location(postcode="AA1 1AA", lat=51.6, lon=-0.2)
@@ -304,3 +307,121 @@ def test_arcs_deliver_to_collect():
     arcs = [a for a in graph.arcs if a.tail == deliver_idx and a.head == collect_idx]
     assert len(arcs) == 1
     assert arcs[0].mode == "transit"
+
+
+def test_self_loop_on_job_nodes():
+    """Every job node has a self-loop arc (for skipping). Home does NOT."""
+    d = _make_driver()
+    j = _make_collect("J1", LOC_A)
+    graph = build_driver_graph(d, [j], [], _make_instance([d], [j]))
+    # Self-loop on collect node
+    collect_idx = [n.index for n in graph.nodes if n.node_type == "collect"][0]
+    self_loops = [a for a in graph.arcs if a.tail == collect_idx and a.head == collect_idx]
+    assert len(self_loops) == 1
+    assert self_loops[0].cost == 0
+    # No self-loop on home
+    home_loops = [a for a in graph.arcs if a.tail == 0 and a.head == 0]
+    assert len(home_loops) == 0
+
+
+def test_self_loop_on_depot_nodes():
+    """Depot nodes also get self-loops."""
+    d = _make_driver()
+    j = _make_collect("J1", LOC_A)
+    depot = _make_storage()
+    graph = build_driver_graph(d, [j], [depot], _make_instance([d], [j], [depot]))
+    for n in graph.nodes:
+        if n.node_type in ("depot_drop", "depot_pickup"):
+            self_loops = [a for a in graph.arcs if a.tail == n.index and a.head == n.index]
+            assert len(self_loops) == 1
+
+
+def test_collect_deliver_group_mismatch_no_arc():
+    """COLLECT -> DELIVER with different vehicle groups: no arc."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3")
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN2", group="V5")
+    graph = build_driver_graph(d, [j1, j2], [], _make_instance([d], [j1, j2]))
+    collect_idx = [n.index for n in graph.nodes if n.node_type == "collect"][0]
+    deliver_idx = [n.index for n in graph.nodes if n.node_type == "deliver"][0]
+    arcs = [a for a in graph.arcs if a.tail == collect_idx and a.head == deliver_idx]
+    assert len(arcs) == 0
+
+
+def test_collect_deliver_reg_mismatch_no_arc():
+    """COLLECT reg=VAN1 -> DELIVER reg=VAN2 (specific, different): no arc."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3")
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN2", group="V3")
+    graph = build_driver_graph(d, [j1, j2], [], _make_instance([d], [j1, j2]))
+    collect_idx = [n.index for n in graph.nodes if n.node_type == "collect"][0]
+    deliver_idx = [n.index for n in graph.nodes if n.node_type == "deliver"][0]
+    arcs = [a for a in graph.arcs if a.tail == collect_idx and a.head == deliver_idx]
+    assert len(arcs) == 0
+
+
+def test_collect_to_tba_deliver_same_group():
+    """COLLECT reg=VAN1, group=V3 -> TBA DELIVER group=V3: arc exists."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3")
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg=None, group="V3")
+    graph = build_driver_graph(d, [j1, j2], [], _make_instance([d], [j1, j2]))
+    collect_idx = [n.index for n in graph.nodes if n.node_type == "collect"][0]
+    deliver_idx = [n.index for n in graph.nodes if n.node_type == "deliver"][0]
+    arcs = [a for a in graph.arcs if a.tail == collect_idx and a.head == deliver_idx]
+    assert len(arcs) == 1
+
+
+def test_arc_cost_transit():
+    """Transit arc cost = travel_minutes * TRANSIT_WEIGHT."""
+    d = _make_driver()
+    j = _make_collect("J1", LOC_A)
+    graph = build_driver_graph(d, [j], [], _make_instance([d], [j]))
+    home_idx = 0
+    collect_idx = [n.index for n in graph.nodes if n.node_type == "collect"][0]
+    arc = [a for a in graph.arcs if a.tail == home_idx and a.head == collect_idx][0]
+    # HH1->AA1 transit = 30 min, cost = 30 * TRANSIT_WEIGHT(3) = 90
+    assert arc.cost == 30 * TRANSIT_WEIGHT
+
+
+def test_arc_cost_driving():
+    """Driving arc cost = travel_minutes * DRIVING_WEIGHT (travel includes turnaround if applicable)."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3")
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3")
+    graph = build_driver_graph(d, [j1, j2], [], _make_instance([d], [j1, j2]))
+    collect_idx = [n.index for n in graph.nodes if n.node_type == "collect"][0]
+    deliver_idx = [n.index for n in graph.nodes if n.node_type == "deliver"][0]
+    arc = [a for a in graph.arcs if a.tail == collect_idx and a.head == deliver_idx][0]
+    # driving AA1->BB2 = 30, turnaround = 45, total travel = 75
+    # cost = 75 * DRIVING_WEIGHT(1) = 75
+    assert arc.cost == (30 + TURNAROUND_MINUTES) * DRIVING_WEIGHT
+
+
+# --- Temporal pruning ---
+
+def test_temporal_pruning_removes_unreachable():
+    """Arc from job at t=480 to job at t=490 with 50 min travel: pruned (480+50 > 490)."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, window_start=480, window_end=480)
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
+                       window_start=490, window_end=490)
+    graph = build_driver_graph(d, [j1, j2], [], _make_instance([d], [j1, j2]))
+    collect_idx = [n.index for n in graph.nodes if n.node_type == "collect"][0]
+    deliver_idx = [n.index for n in graph.nodes if n.node_type == "deliver"][0]
+    # driving 30 + turnaround 45 = 75 min travel. 480 + 75 = 555 > 490. Pruned.
+    arcs = [a for a in graph.arcs if a.tail == collect_idx and a.head == deliver_idx]
+    assert len(arcs) == 0
+
+
+def test_temporal_pruning_keeps_reachable():
+    """Arc from job at t=480 to job at t=600 with 75 min travel: kept (480+75 <= 600)."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, window_start=480, window_end=480)
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
+                       window_start=555, window_end=700)
+    graph = build_driver_graph(d, [j1, j2], [], _make_instance([d], [j1, j2]))
+    collect_idx = [n.index for n in graph.nodes if n.node_type == "collect"][0]
+    deliver_idx = [n.index for n in graph.nodes if n.node_type == "deliver"][0]
+    arcs = [a for a in graph.arcs if a.tail == collect_idx and a.head == deliver_idx]
+    assert len(arcs) == 1

@@ -79,129 +79,115 @@ def _build_arcs(
     feasible_jobs: list[Job],
     instance: ProblemInstance,
 ) -> list[CircuitArc]:
-    """Build state-legal arcs between nodes based on driver custody state machine."""
-    matrix = instance.transit_matrix
-    job_by_id = {j.job_id: j for j in feasible_jobs}
+    """Build state-legal arcs between nodes.
+
+    State machine:
+      EMPTY_HANDED nodes: home, deliver, depot_drop
+      IN_VEHICLE nodes: collect, depot_pickup
+
+    From EMPTY_HANDED: can go to COLLECT or DEPOT_PICKUP (transit)
+    From IN_VEHICLE: can go to DELIVER, DEPOT_DROP, or HOME (driving)
+    """
     arcs: list[CircuitArc] = []
+    jobs_by_id = {j.job_id: j for j in feasible_jobs}
+    tm = instance.transit_matrix
+
+    empty_handed_types = {"home", "deliver", "depot_drop"}
+    in_vehicle_types = {"collect", "depot_pickup"}
+    empty_to_targets = {"collect", "depot_pickup", "home"}
+    vehicle_to_targets = {"deliver", "depot_drop", "home"}
+
+    def _node_location(node: CircuitNode):
+        if node.job_id:
+            job = jobs_by_id.get(node.job_id)
+            return job.target_location if job else None
+        if node.node_type == "home":
+            for d in instance.drivers:
+                if d.driver_id == node.driver_id:
+                    return d.home_location
+        if node.node_type in ("depot_drop", "depot_pickup"):
+            for sl in instance.storage_locations:
+                if sl.location_id == node.storage_location_id:
+                    return sl.location
+        return None
 
     for tail_node in nodes:
-        for head_node in nodes:
-            if tail_node.index == head_node.index:
-                continue  # self-loops handled by solver, not here
+        # Self-loop for skippable nodes (everything except home)
+        if tail_node.node_type != "home":
+            arcs.append(CircuitArc(
+                tail=tail_node.index, head=tail_node.index,
+                travel_minutes=0, cost=0, mode="transit",
+            ))
 
-            arc = _try_build_arc(tail_node, head_node, job_by_id, matrix)
-            if arc is not None:
-                arcs.append(arc)
+        tail_loc = _node_location(tail_node)
+        if tail_loc is None:
+            continue
+
+        if tail_node.node_type in empty_handed_types:
+            allowed_targets = empty_to_targets
+        elif tail_node.node_type in in_vehicle_types:
+            allowed_targets = vehicle_to_targets
+        else:
+            continue
+
+        for head_node in nodes:
+            if head_node.index == tail_node.index:
+                continue
+            if head_node.node_type not in allowed_targets:
+                continue
+
+            head_loc = _node_location(head_node)
+            if head_loc is None:
+                continue
+
+            # Vehicle group matching for COLLECT -> DELIVER
+            if tail_node.node_type == "collect" and head_node.node_type == "deliver":
+                tail_job = jobs_by_id[tail_node.job_id]
+                head_job = jobs_by_id[head_node.job_id]
+                if tail_job.vehicle_group != head_job.vehicle_group:
+                    continue
+                # Reg compatibility: deliver must be TBA or same reg
+                if head_job.vehicle_reg is not None and tail_job.vehicle_reg != head_job.vehicle_reg:
+                    continue
+
+            # Determine mode and travel time
+            if tail_node.node_type in in_vehicle_types:
+                mode = "driving"
+                pair = tm.get(tail_loc, head_loc)
+                if pair is None:
+                    continue
+                travel = pair.driving_minutes
+                if tail_node.node_type == "collect" and head_node.node_type == "deliver":
+                    travel += TURNAROUND_MINUTES
+                if head_node.node_type == "depot_drop":
+                    travel += DEPOT_DWELL_MINUTES
+                cost = travel * DRIVING_WEIGHT
+            else:
+                mode = "transit"
+                pair = tm.get(tail_loc, head_loc)
+                if pair is None:
+                    continue
+                travel = pair.transit_minutes
+                if head_node.node_type == "depot_pickup":
+                    travel += DEPOT_DWELL_MINUTES
+                cost = travel * TRANSIT_WEIGHT
+
+            # Temporal pruning: can the driver reach head_node in time?
+            if tail_node.job_id and head_node.job_id:
+                tail_job = jobs_by_id[tail_node.job_id]
+                head_job = jobs_by_id[head_node.job_id]
+                if tail_job.window_start_t + travel > head_job.window_end_t:
+                    continue
+
+            # vehicle_reg on arc (for driving arcs from collect)
+            vehicle_reg = None
+            if tail_node.node_type == "collect" and tail_node.job_id:
+                vehicle_reg = jobs_by_id[tail_node.job_id].vehicle_reg
+
+            arcs.append(CircuitArc(
+                tail=tail_node.index, head=head_node.index,
+                travel_minutes=travel, cost=cost,
+                mode=mode, vehicle_reg=vehicle_reg,
+            ))
 
     return arcs
-
-
-def _try_build_arc(
-    tail: CircuitNode,
-    head: CircuitNode,
-    job_by_id: dict[str, Job],
-    matrix,
-) -> CircuitArc | None:
-    """Return an arc if the state transition is legal, else None."""
-    from scheduler.models import Location, TransitPair
-
-    tail_type = tail.node_type
-    head_type = head.node_type
-
-    # Determine which postcode to look up travel from
-    tail_postcode = tail.postcode
-    head_postcode = head.postcode
-
-    # --- State machine: legal transitions ---
-    # EMPTY_HANDED -> collect: transit to pick up the van
-    if tail_type in _EMPTY_HANDED and head_type == "collect":
-        pair = matrix.entries.get((tail_postcode, head_postcode))
-        if pair is None:
-            return None
-        travel = pair.transit_minutes
-        cost = travel * TRANSIT_WEIGHT
-        return CircuitArc(
-            tail=tail.index, head=head.index,
-            travel_minutes=travel, cost=cost,
-            mode="transit",
-        )
-
-    # EMPTY_HANDED -> depot_pickup: transit to depot to pick up a van (+ dwell)
-    if tail_type in _EMPTY_HANDED and head_type == "depot_pickup":
-        # No self-depot-pickup-from-depot-drop-same-depot unless different depot
-        pair = matrix.entries.get((tail_postcode, head_postcode))
-        if pair is None and tail_postcode != head_postcode:
-            return None
-        if pair is None:
-            # same postcode (same depot): zero travel + dwell
-            travel = DEPOT_DWELL_MINUTES
-        else:
-            travel = pair.transit_minutes + DEPOT_DWELL_MINUTES
-        cost = travel * TRANSIT_WEIGHT
-        return CircuitArc(
-            tail=tail.index, head=head.index,
-            travel_minutes=travel, cost=cost,
-            mode="transit",
-        )
-
-    # IN_VEHICLE -> deliver: driving the van to delivery (+ turnaround)
-    if tail_type in _IN_VEHICLE and head_type == "deliver":
-        pair = matrix.entries.get((tail_postcode, head_postcode))
-        if pair is None:
-            return None
-        travel = pair.driving_minutes + TURNAROUND_MINUTES
-        cost = travel * DRIVING_WEIGHT
-        return CircuitArc(
-            tail=tail.index, head=head.index,
-            travel_minutes=travel, cost=cost,
-            mode="driving",
-        )
-
-    # IN_VEHICLE -> depot_drop: driving van to depot (+ dwell)
-    if tail_type in _IN_VEHICLE and head_type == "depot_drop":
-        pair = matrix.entries.get((tail_postcode, head_postcode))
-        if pair is None and tail_postcode != head_postcode:
-            return None
-        if pair is None:
-            travel = DEPOT_DWELL_MINUTES
-        else:
-            travel = pair.driving_minutes + DEPOT_DWELL_MINUTES
-        cost = travel * DRIVING_WEIGHT
-        return CircuitArc(
-            tail=tail.index, head=head.index,
-            travel_minutes=travel, cost=cost,
-            mode="driving",
-        )
-
-    # IN_VEHICLE -> home: driving van home (end of day with van)
-    if tail_type in _IN_VEHICLE and head_type == "home":
-        pair = matrix.entries.get((tail_postcode, head_postcode))
-        if pair is None:
-            return None
-        travel = pair.driving_minutes
-        cost = travel * DRIVING_WEIGHT
-        return CircuitArc(
-            tail=tail.index, head=head.index,
-            travel_minutes=travel, cost=cost,
-            mode="driving",
-        )
-
-    # EMPTY_HANDED -> home: transit home (end of day without van)
-    if tail_type in _EMPTY_HANDED and head_type == "home":
-        # depot_drop -> home is transit
-        pair = matrix.entries.get((tail_postcode, head_postcode))
-        if pair is None and tail_postcode != head_postcode:
-            return None
-        if pair is None:
-            travel = 0
-        else:
-            travel = pair.transit_minutes
-        cost = travel * TRANSIT_WEIGHT
-        return CircuitArc(
-            tail=tail.index, head=head.index,
-            travel_minutes=travel, cost=cost,
-            mode="transit",
-        )
-
-    # No legal transition
-    return None
