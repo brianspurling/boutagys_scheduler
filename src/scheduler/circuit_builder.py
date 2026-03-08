@@ -176,7 +176,8 @@ def _build_arcs(
             if tail_node.job_id and head_node.job_id:
                 tail_job = jobs_by_id[tail_node.job_id]
                 head_job = jobs_by_id[head_node.job_id]
-                if tail_job.window_start_t + travel > head_job.window_end_t:
+                tail_earliest = tail_job.earliest_departure_t if tail_job.earliest_departure_t is not None else 0
+                if tail_earliest + travel > head_job.same_day_end_t:
                     continue
 
             # vehicle_reg on arc (for driving arcs from collect)

@@ -14,6 +14,10 @@ from scheduler.models import (
     ActionType, CertLevel, CircuitNode, DriverCircuitGraph, DriverRoute,
     HorizonConfig, Job, JobAssignment, ProblemInstance, RouteLeg, SolverResult,
 )
+from scheduler.penalty_config import (
+    LATE_SAME_DAY_RATE, SEVERE_NEXT_DAY_RATE,
+    EARLY_RATE, LATE_TIER1_RATE, LATE_TIER2_RATE,
+)
 
 ACTIVATION_PENALTY = 120
 SPAN_PENALTY = 1
@@ -31,6 +35,7 @@ def _extract_driver_routes(
 ) -> list[DriverRoute]:
     """Extract driver routes from the solved circuit model."""
     routes: list[DriverRoute] = []
+    depot_name_by_id = {sl.location_id: sl.name for sl in instance.storage_locations}
 
     for driver_id, graph in driver_graphs.items():
         driver = drivers_by_id[driver_id]
@@ -76,13 +81,29 @@ def _extract_driver_routes(
             if arc is None:
                 continue
 
+            # Tag leg with depot name if either endpoint is a depot node
+            depot_name = None
+            if head_node.storage_location_id:
+                depot_name = depot_name_by_id.get(head_node.storage_location_id)
+            elif tail_node.storage_location_id:
+                depot_name = depot_name_by_id.get(tail_node.storage_location_id)
+
+            # For driving legs from a depot_pickup, arc.vehicle_reg is None
+            # (depots are anonymous pools). Fall back to the deliver job's reg.
+            vehicle_reg = arc.vehicle_reg
+            if vehicle_reg is None and arc.mode == "driving" and head_node.job_id:
+                job = jobs_by_id.get(head_node.job_id)
+                if job:
+                    vehicle_reg = job.vehicle_reg
+
             leg = RouteLeg(
                 from_postcode=tail_node.postcode,
                 to_postcode=head_node.postcode,
                 mode=arc.mode,
                 duration_minutes=arc.travel_minutes,
                 job_id=head_node.job_id,
-                vehicle_reg=arc.vehicle_reg,
+                vehicle_reg=vehicle_reg,
+                depot_name=depot_name,
             )
             legs.append(leg)
 
@@ -123,7 +144,7 @@ def _feasible_jobs_for_driver(
         pair = instance.transit_matrix.get(driver.home_location, job.target_location)
         if pair is None:
             continue
-        if pair.transit_minutes > job.window_end_t:
+        if pair.transit_minutes > job.same_day_end_t:
             continue
         result.append(job)
     return result
@@ -167,9 +188,8 @@ def solve_circuit(
                     0, t_max, f"arrival_{driver_id}_{node.index}",
                 )
             elif node.job_id:
-                job = jobs_by_id[node.job_id]
                 arrival_time[driver_id][node.index] = model.new_int_var(
-                    job.window_start_t, job.window_end_t,
+                    0, t_max,
                     f"arrival_{driver_id}_{node.index}",
                 )
             else:
@@ -177,6 +197,15 @@ def solve_circuit(
                 arrival_time[driver_id][node.index] = model.new_int_var(
                     0, t_max, f"arrival_{driver_id}_{node.index}",
                 )
+
+        # Hard collect floor: service cannot start before booking time
+        for node in graph.nodes:
+            if node.node_type == "collect" and node.job_id:
+                job = jobs_by_id[node.job_id]
+                if job.earliest_departure_t is not None:
+                    model.add(
+                        arrival_time[driver_id][node.index] >= job.earliest_departure_t
+                    )
 
         # Step 1: populate arc_vars dict (home self-loop first, then graph arcs)
         # Home self-loop: required by add_circuit when driver does no work
@@ -283,6 +312,46 @@ def solve_circuit(
         span_limit = driver.max_hours_per_day * instance.horizon.num_days
         model.add(s_end - s_start <= span_limit).only_enforce_if(is_w)
 
+    # --- Per-job time penalty terms ---
+    job_penalty_terms = []
+
+    for job in instance.jobs:
+        infos = job_node_info.get(job.job_id, [])
+        if not infos:
+            continue
+
+        for driver_id, node_idx in infos:
+            arrival = arrival_time[driver_id][node_idx]
+
+            if job.action == ActionType.COLLECT and job.grace_end_t is not None:
+                past_grace = model.new_int_var(0, t_max, f"past_grace_{job.job_id}_{driver_id}")
+                model.add_max_equality(past_grace, [0, arrival - job.grace_end_t])
+
+                past_day = model.new_int_var(0, t_max, f"past_day_{job.job_id}_{driver_id}")
+                model.add_max_equality(past_day, [0, arrival - job.same_day_end_t])
+
+                job_penalty_terms.append(LATE_SAME_DAY_RATE * past_grace)
+                job_penalty_terms.append(SEVERE_NEXT_DAY_RATE * past_day)
+
+            elif job.action == ActionType.DELIVER and job.deadline_t is not None:
+                minutes_early = model.new_int_var(0, t_max, f"early_{job.job_id}_{driver_id}")
+                model.add_max_equality(minutes_early, [0, job.same_day_start_t - arrival])
+
+                # No clamping on t1 — let it grow to t_max.
+                # Clamping would make the model INFEASIBLE when arrival - deadline > 60.
+                minutes_late_t1 = model.new_int_var(0, t_max, f"late_t1_{job.job_id}_{driver_id}")
+                model.add_max_equality(minutes_late_t1, [0, arrival - job.deadline_t])
+
+                # t2 tracks only the portion beyond 60 minutes
+                minutes_late_t2 = model.new_int_var(0, t_max, f"late_t2_{job.job_id}_{driver_id}")
+                model.add_max_equality(minutes_late_t2, [0, arrival - job.deadline_t - 60])
+
+                job_penalty_terms.append(EARLY_RATE * minutes_early)
+                job_penalty_terms.append(LATE_TIER1_RATE * minutes_late_t1)
+                # Delta encoding: t1 charges TIER1 for all late minutes.
+                # t2 adds (TIER2-TIER1) for minutes beyond 60, so total = TIER2.
+                job_penalty_terms.append((LATE_TIER2_RATE - LATE_TIER1_RATE) * minutes_late_t2)
+
     # --- Objective function ---
     objective_terms = []
 
@@ -294,6 +363,9 @@ def solve_circuit(
             if arc.cost > 0:
                 var = arc_vars[driver_id][(arc.tail, arc.head)]
                 objective_terms.append(arc.cost * var)
+
+    # Job time penalties
+    objective_terms.extend(job_penalty_terms)
 
     # Unassigned job penalty
     for job_id, var in is_unassigned.items():
