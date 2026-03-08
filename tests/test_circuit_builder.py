@@ -44,15 +44,15 @@ def _make_driver(driver_id="D1", loc=LOC_HOME):
 
 
 def _make_collect(job_id, loc, vehicle_reg="VAN1", group="V3",
-                  window_start=480, window_end=600):
+                  earliest_departure_t=480):
     return Job(
         job_id=job_id, book_no=f"B{job_id}", order_ref="", rental_no="",
         book_name="", book_status="",
         action=ActionType.COLLECT, scheduled_date=date(2025, 12, 8),
         scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
         time_offset_minutes=540,
-        earliest_departure_t=window_start,
-        grace_end_t=window_end,
+        earliest_departure_t=earliest_departure_t,
+        grace_end_t=earliest_departure_t + 120,
         same_day_start_t=0,
         same_day_end_t=1439,
         deadline_t=None,
@@ -413,7 +413,7 @@ def test_arc_cost_driving():
 def test_temporal_pruning_removes_unreachable():
     """Arc from job at t=480 to job at t=490 with 50 min travel: pruned (480+50 > 490)."""
     d = _make_driver()
-    j1 = _make_collect("J1", LOC_A, window_start=480, window_end=480)
+    j1 = _make_collect("J1", LOC_A, earliest_departure_t=480)
     j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
                        window_start=490, window_end=490)
     graph = build_driver_graph(d, [j1, j2], [], _make_instance([d], [j1, j2]))
@@ -427,7 +427,7 @@ def test_temporal_pruning_removes_unreachable():
 def test_temporal_pruning_keeps_reachable():
     """Arc from job at t=480 to job at t=600 with 75 min travel: kept (480+75 <= 600)."""
     d = _make_driver()
-    j1 = _make_collect("J1", LOC_A, window_start=480, window_end=480)
+    j1 = _make_collect("J1", LOC_A, earliest_departure_t=480)
     j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
                        window_start=555, window_end=700)
     graph = build_driver_graph(d, [j1, j2], [], _make_instance([d], [j1, j2]))

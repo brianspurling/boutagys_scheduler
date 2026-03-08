@@ -43,9 +43,9 @@ def _make_job(
         scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
         time_offset_minutes=540,
         earliest_departure_t=window_start if is_collect else None,
-        grace_end_t=window_end if is_collect else None,
-        same_day_start_t=window_start,
-        same_day_end_t=window_end,
+        grace_end_t=(window_start + 120) if is_collect else None,
+        same_day_start_t=0,
+        same_day_end_t=1439,
         deadline_t=None if is_collect else window_end,
         vehicle_reg=vehicle_reg, vehicle_group=group,
         target_location=loc, notes="",
@@ -78,10 +78,23 @@ def test_driver_job_arc_unavailable():
 
 
 def test_driver_job_arc_too_far():
-    """If deadhead exceeds the job's absolute window_end_t, arc should be pruned."""
+    """If deadhead exceeds the job's absolute same_day_end_t, arc should be pruned."""
     driver = _make_driver("D001", CertLevel.VAN, LOC_A)
-    # Window ends at minute 50 — but deadhead is 55 minutes, so driver can't arrive in time
-    job = _make_job("J001", ActionType.COLLECT, "V3", LOC_B, window_start=0, window_end=50)
+    # same_day_end_t=50 but deadhead is 55 minutes — arc pruned at arc-build time
+    job = Job(
+        job_id="J001", book_no="", order_ref="", rental_no="",
+        book_name="", book_status="",
+        action=ActionType.COLLECT, scheduled_date=date(2025, 12, 8),
+        scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
+        time_offset_minutes=0,
+        earliest_departure_t=0,
+        grace_end_t=120,
+        same_day_start_t=0,
+        same_day_end_t=50,
+        deadline_t=None,
+        vehicle_reg=None, vehicle_group="V3",
+        target_location=LOC_B, notes="",
+    )
     arcs = compute_driver_job_arcs([driver], [job], MATRIX, VEHICLE_GROUP_CERTS)
     assert len(arcs) == 0
 
@@ -180,8 +193,11 @@ def test_job_chain_arc_vehicle_driver_group_mismatch():
 
 
 def test_job_chain_arc_temporally_impossible():
+    # Arc builder is intentionally permissive — same_day_end_t=1439 for all same-day jobs,
+    # so a J001->J002 arc is admitted here even when both jobs share t=700.
+    # Exact temporal infeasibility (earliest_departure_t conflicts) is enforced by the solver.
     job_a = _make_job("J001", ActionType.COLLECT, "V3", LOC_A, window_start=700, window_end=720)
     job_b = _make_job("J002", ActionType.COLLECT, "V3", LOC_B, window_start=700, window_end=720)
     arcs = compute_job_chain_arcs([job_a, job_b], MATRIX)
     a_to_b = [a for a in arcs if a.from_job_id == "J001" and a.to_job_id == "J002"]
-    assert len(a_to_b) == 0
+    assert len(a_to_b) == 1
