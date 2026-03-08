@@ -76,7 +76,18 @@ The solver runs for up to `timeout_seconds` (default 60s) and returns the best s
 Results are written to `output/`:
 - `schedule.csv` — one row per job, with assigned driver, times, and vehicle
 - `schedule.json` — full structured output including driver routes and solver stats
-- `report.html` — visual HTML schedule (built separately on top of the JSON)
+- `report.html` — visual HTML schedule loaded from `schedule.json` in the browser
+
+### The HTML Report
+
+Open `output/report.html` directly in a browser (no server needed). It reads `schedule.json` from the same folder and renders four sections:
+
+- **Driver Summary** — a Gantt-style bar chart showing each driver's collect and deliver jobs across the day, with idle drivers greyed out
+- **Drivers** — expandable accordion per driver, showing their full route as a sequence of legs (transit or driving), with postcodes, durations, and vehicle regs
+- **Vehicles** — expandable accordion per vehicle, listing all jobs it is assigned to
+- **Bookings** — full job table with assigned driver, scheduled time, action, vehicle, and location; unassigned jobs are highlighted in red
+
+If any jobs are unassigned, a warning banner appears at the top and a "Download unassigned KML" button lets you export the unassigned job locations for viewing in Google Maps or similar.
 
 ---
 
@@ -188,3 +199,29 @@ pytest
 **Collect vs Deliver** — a Collect means picking up a van from a customer; a Deliver means dropping a van to a customer. They have asymmetric time window rules (collects have a grace period; delivers have hard late penalties).
 
 **Job chaining** — when a driver collects a van and then immediately delivers it, a mandatory 45-minute turnaround buffer is inserted between the two jobs.
+
+---
+
+## Known Limitations & To Do
+
+### Travel time accuracy (high priority)
+
+Transit and driving times are currently estimated using straight-line (Haversine) distance with fixed speed assumptions (30 km/h driving, 20 km/h transit with a 15% buffer). This is a placeholder. Real travel times — especially for public transit across the UK — can differ significantly.
+
+**Needed:** Replace `geo.py`'s `estimate_transit_pair` with a Google Maps API lookup (Distance Matrix API, transit mode). Times should be pre-computed and cached in a lookup table (keyed by postcode pair) so the solver doesn't make live API calls. The caching layer and cache-population script need to be built.
+
+### Multi-day / rolling horizon
+
+The solver currently runs against a single day's bookings. The 4–5 day rolling horizon described in the spec — where Day 1 is frozen and vehicle positions carry forward into Days 2–5 — is not yet implemented. Vehicle states are treated as static (current position only, no forward propagation).
+
+### TBA vehicle assignment
+
+Deliver jobs with no `Reg No.` (TBA) are not yet handled. The solver needs to dynamically select the best available vehicle from the pool matching the required group, and apply `NoOverlap` constraints to prevent double-assignment.
+
+### Storage location capacity tracking
+
+Depot capacity limits exist in `storage_locations.csv` but are not yet enforced in the solver. Cumulative/Reservoir constraints tracking vehicle arrivals minus departures at each depot need to be added.
+
+### Report not auto-regenerated
+
+`report.html` is a static file that must be manually regenerated (or rebuilt as a script) after each solver run. Currently it is committed separately from `schedule.json`.
