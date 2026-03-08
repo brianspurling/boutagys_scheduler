@@ -94,13 +94,18 @@ def _make_instance(drivers, jobs, storage_locations=None, vehicles=None):
     )
 
 
+def _solve(instance):
+    """Solve with a short timeout suitable for unit tests."""
+    return solve_circuit(instance, timeout_seconds=5)
+
+
 # --- Basic circuit feasibility ---
 
 def test_single_collect_feasible():
     """One driver, one collect job — FEASIBLE, driver visits the collect node."""
     d = _make_driver()
     j = _make_collect("J1", LOC_A)
-    result = solve_circuit(_make_instance([d], [j]))
+    result = _solve(_make_instance([d], [j]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 1
     assert result.assignments[0].job_id == "J1"
@@ -112,7 +117,7 @@ def test_single_deliver_with_depot():
     d = _make_driver()
     j = _make_deliver("J1", LOC_A, vehicle_reg="VAN1")
     depot = _make_storage()
-    result = solve_circuit(_make_instance([d], [j], [depot]))
+    result = _solve(_make_instance([d], [j], [depot]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 1
 
@@ -124,7 +129,7 @@ def test_collect_then_deliver_chains():
                        earliest_departure_t=480, same_day_end_t=1439)
     j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
                        deadline_t=700)
-    result = solve_circuit(_make_instance([d], [j1, j2]))
+    result = _solve(_make_instance([d], [j1, j2]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 2
     # Verify ordering: collect before deliver
@@ -141,11 +146,11 @@ def test_two_collects_need_depot():
     # Without depot: INFEASIBLE (can't do two collects — no arc COLLECT->COLLECT)
     # But we have two drivers to make it feasible without depot
     d2 = _make_driver("D2")
-    result_no_depot = solve_circuit(_make_instance([d, d2], [j1, j2]))
+    result_no_depot = _solve(_make_instance([d, d2], [j1, j2]))
     assert result_no_depot.status in ("OPTIMAL", "FEASIBLE")
     # With one driver and a depot: also FEASIBLE
     depot = _make_storage()
-    result_depot = solve_circuit(_make_instance([d], [j1, j2], [depot]))
+    result_depot = _solve(_make_instance([d], [j1, j2], [depot]))
     assert result_depot.status in ("OPTIMAL", "FEASIBLE")
 
 
@@ -155,7 +160,7 @@ def test_multi_driver_assignment():
     d2 = _make_driver("D2")
     j1 = _make_collect("J1", LOC_A, earliest_departure_t=480)
     j2 = _make_collect("J2", LOC_B, earliest_departure_t=480)
-    result = solve_circuit(_make_instance([d1, d2], [j1, j2]))
+    result = _solve(_make_instance([d1, d2], [j1, j2]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 2
 
@@ -170,7 +175,7 @@ def test_no_double_collect_one_driver():
     j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", earliest_departure_t=480)
     j2 = _make_collect("J2", LOC_B, vehicle_reg="VAN2", earliest_departure_t=480)
     # No depot — can't park between collects
-    result = solve_circuit(_make_instance([d1, d2], [j1, j2]))
+    result = _solve(_make_instance([d1, d2], [j1, j2]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 2
     # Each driver does exactly one job
@@ -187,7 +192,7 @@ def test_collect_deliver_collect_feasible_with_depot():
                        deadline_t=700)
     j3 = _make_collect("J3", LOC_A, vehicle_reg="VAN2", group="V3",
                        earliest_departure_t=800)
-    result = solve_circuit(_make_instance([d], [j1, j2, j3]))
+    result = _solve(_make_instance([d], [j1, j2, j3]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 3
     starts = {a.job_id: a.start_time_t for a in result.assignments}
@@ -199,7 +204,7 @@ def test_shift_span_limit():
     d = _make_driver(max_hours=40)  # 40 minutes max
     # Job at 480: transit out=30min, return driving=20min → min span=50 > 40
     j = _make_collect("J1", LOC_A, earliest_departure_t=480)
-    result = solve_circuit(_make_instance([d], [j]))
+    result = _solve(_make_instance([d], [j]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 0
     assert "J1" in result.unassigned_job_ids
@@ -215,7 +220,7 @@ def test_tba_deliver_from_depot():
     depot = _make_storage()
     v = Vehicle(reg="VAN1", group="V3", current_location=LOC_DEPOT,
                 available_from=date(2025, 12, 8), available_from_t=0)
-    result = solve_circuit(_make_instance([d], [j], [depot], [v]))
+    result = _solve(_make_instance([d], [j], [depot], [v]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 1
 
@@ -227,7 +232,7 @@ def test_tba_deliver_from_collect_chain():
                        earliest_departure_t=480)
     j2 = _make_deliver("J2", LOC_B, vehicle_reg=None, group="V3",
                        deadline_t=800)
-    result = solve_circuit(_make_instance([d], [j1, j2]))
+    result = _solve(_make_instance([d], [j1, j2]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 2
 
@@ -238,7 +243,7 @@ def test_tba_no_source_infeasible():
     j = _make_deliver("J1", LOC_A, vehicle_reg=None, group="V3",
                       deadline_t=700)
     # No depot, no vehicles, no collects
-    result = solve_circuit(_make_instance([d], [j]))
+    result = _solve(_make_instance([d], [j]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 0
     assert "J1" in result.unassigned_job_ids
@@ -254,7 +259,7 @@ def test_activation_penalty_prefers_fewer_drivers():
     j1 = _make_collect("J1", LOC_A, earliest_departure_t=480)
     j2 = _make_collect("J2", LOC_B, earliest_departure_t=700)
     depot = _make_storage()
-    result = solve_circuit(_make_instance([d1, d2], [j1, j2], [depot]))
+    result = _solve(_make_instance([d1, d2], [j1, j2], [depot]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 2
     # With activation penalty, solver should use 1 driver (via depot between collects)
@@ -268,7 +273,7 @@ def test_route_extraction_single_collect():
     """Single collect: route = HOME -transit-> COLLECT -driving-> HOME."""
     d = _make_driver()
     j = _make_collect("J1", LOC_A, earliest_departure_t=480)
-    result = solve_circuit(_make_instance([d], [j]))
+    result = _solve(_make_instance([d], [j]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.driver_routes) == 1
     route = result.driver_routes[0]
@@ -290,7 +295,7 @@ def test_route_extraction_collect_deliver_chain():
                        earliest_departure_t=480)
     j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
                        deadline_t=800)
-    result = solve_circuit(_make_instance([d], [j1, j2]))
+    result = _solve(_make_instance([d], [j1, j2]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.driver_routes) == 1
     route = result.driver_routes[0]
@@ -315,7 +320,7 @@ def test_chaining_cheaper_than_depot_detour():
     j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
                        deadline_t=800)
     depot = _make_storage()
-    result = solve_circuit(_make_instance([d], [j1, j2], [depot]))
+    result = _solve(_make_instance([d], [j1, j2], [depot]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     # Both jobs should be assigned (chaining is possible)
     assert len(result.assignments) == 2
@@ -370,7 +375,7 @@ def test_collect_hard_floor_respected():
     d = _make_driver()  # 30min transit to LOC_A
     # earliest_departure_t=600 (10:00). Driver can reach in 30min from t=0.
     j = _make_collect("J1", LOC_A, earliest_departure_t=600)
-    result = solve_circuit(_make_instance([d], [j]))
+    result = _solve(_make_instance([d], [j]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 1
     # Service must not start before the hard floor
@@ -381,7 +386,7 @@ def test_collect_within_grace_is_assigned():
     """Collect job within grace period is assigned without issue."""
     d = _make_driver()
     j = _make_collect("J1", LOC_A, earliest_departure_t=0)  # grace ends at 120
-    result = solve_circuit(_make_instance([d], [j]))
+    result = _solve(_make_instance([d], [j]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 1
 
@@ -393,6 +398,6 @@ def test_deliver_early_arrival_is_assigned():
     depot = _make_storage()
     v = Vehicle(reg="VAN1", group="V3", current_location=LOC_DEPOT,
                 available_from=date(2025, 12, 8), available_from_t=0)
-    result = solve_circuit(_make_instance([d], [j], [depot], [v]))
+    result = _solve(_make_instance([d], [j], [depot], [v]))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     assert len(result.assignments) == 1
