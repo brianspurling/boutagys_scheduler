@@ -9,7 +9,7 @@ from datetime import datetime, time, timedelta
 from ortools.sat.python import cp_model
 
 from scheduler.models import (
-    ChainType, DriverRoute, HorizonConfig, JobAssignment,
+    ActionType, ChainType, DriverRoute, HorizonConfig, JobAssignment,
     ProblemInstance, RouteLeg, SolverResult,
 )
 
@@ -74,8 +74,13 @@ def solve(instance: ProblemInstance, timeout_seconds: int = 300) -> SolverResult
             x_var = model.new_bool_var(f"x_{driver_id}_{job_id}")
             x[driver_id, job_id] = x_var
 
+            if job.action == ActionType.COLLECT:
+                domain_lb = job.earliest_departure_t if job.earliest_departure_t is not None else 0
+            else:
+                domain_lb = job.same_day_start_t
+            domain_ub = job.same_day_end_t
             start_var = model.new_int_var(
-                job.window_start_t, job.window_end_t,
+                domain_lb, domain_ub,
                 f"start_{driver_id}_{job_id}",
             )
             start[driver_id, job_id] = start_var

@@ -19,7 +19,9 @@ INSTANCE = ProblemInstance(
             book_name="Smith", book_status="", action=ActionType.COLLECT,
             scheduled_date=date(2025, 12, 8), scheduled_time=time(9, 0),
             scheduled_datetime=datetime(2025, 12, 8, 9, 0),
-            time_offset_minutes=540, window_start_t=480, window_end_t=600,
+            time_offset_minutes=540,
+            earliest_departure_t=540, grace_end_t=660,
+            same_day_start_t=0, same_day_end_t=1439, deadline_t=None,
             vehicle_reg="VAN1", vehicle_group="V3", target_location=LOC_A, notes=""),
     ],
     drivers=[

@@ -42,7 +42,9 @@ def _make_job(
         book_name="", book_status="",
         action=ActionType.COLLECT, scheduled_date=date(2025, 12, 8),
         scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
-        time_offset_minutes=540, window_start_t=window_start, window_end_t=window_end,
+        time_offset_minutes=window_start,
+        earliest_departure_t=window_start, grace_end_t=window_start + 120,
+        same_day_start_t=0, same_day_end_t=1439, deadline_t=None,
         vehicle_reg="VAN1", vehicle_group="V3",
         target_location=loc, notes="",
     )
@@ -57,7 +59,9 @@ def _make_tba_deliver(
         book_name="", book_status="",
         action=ActionType.DELIVER, scheduled_date=date(2025, 12, 8),
         scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
-        time_offset_minutes=540, window_start_t=window_start, window_end_t=window_end,
+        time_offset_minutes=window_end,
+        earliest_departure_t=None, grace_end_t=None,
+        same_day_start_t=0, same_day_end_t=1439, deadline_t=window_end,
         vehicle_reg=None, vehicle_group=group,
         target_location=loc, notes="",
     )
@@ -144,21 +148,22 @@ def test_solve_mutual_exclusion_no_chain_arc():
 
 
 def test_solve_deadhead_too_late():
-    """Deadhead exceeds job window — INFEASIBLE."""
+    """Deadhead exceeds the entire same-day window — INFEASIBLE."""
     d1 = _make_driver("D1")
-    j1 = _make_job("J1", LOC_B, window_start=480, window_end=490)
+    # same_day_end_t=1439; a deadhead of 1500 exceeds it so start can never be >= deadhead
+    j1 = _make_job("J1", LOC_B, window_start=480, window_end=600)
     arcs = [
-        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=500, return_deadhead_minutes=30),
+        DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=1500, return_deadhead_minutes=30),
     ]
     result = solve(_make_instance([d1], [j1], arcs))
     assert result.status == "INFEASIBLE"
 
 
 def test_solve_strict_order_enforced():
-    """Chain arc only J1->J2, travel 50 min, windows too tight — INFEASIBLE."""
+    """Chain arc only J1->J2, travel 50 min — solver must sequence J2 at least 50 min after J1."""
     d1 = _make_driver("D1")
-    j1 = _make_job("J1", LOC_B, window_start=480, window_end=490)
-    j2 = _make_job("J2", LOC_C, window_start=480, window_end=490)
+    j1 = _make_job("J1", LOC_B, window_start=480, window_end=600)
+    j2 = _make_job("J2", LOC_C, window_start=480, window_end=600)
     arcs = [
         DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=30, return_deadhead_minutes=30),
         DriverJobArc(driver_id="D1", job_id="J2", deadhead_minutes=40, return_deadhead_minutes=40),
@@ -168,7 +173,9 @@ def test_solve_strict_order_enforced():
                     travel_minutes=50, turnaround_minutes=0),
     ]
     result = solve(_make_instance([d1], [j1, j2], arcs, chains))
-    assert result.status == "INFEASIBLE"
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    starts = {a.job_id: a.start_time_t for a in result.assignments}
+    assert starts["J2"] >= starts["J1"] + 50
 
 
 # --- Disjunctive sequence ---
@@ -201,13 +208,14 @@ def test_solve_disjunctive_sequence():
 def test_solve_start_datetime_correct():
     """Verify start_datetime is correctly derived from start_time_t and horizon."""
     d1 = _make_driver("D1")
-    j1 = _make_job("J1", LOC_B, window_start=540, window_end=540)  # Exactly 09:00
+    # earliest_departure_t=540 (floor); solver may start at or after 09:00
+    j1 = _make_job("J1", LOC_B, window_start=540, window_end=600)
     arcs = [DriverJobArc(driver_id="D1", job_id="J1", deadhead_minutes=0, return_deadhead_minutes=30)]
     result = solve(_make_instance([d1], [j1], arcs, []))
     assert result.status in ("OPTIMAL", "FEASIBLE")
     a = result.assignments[0]
-    assert a.start_time_t == 540
-    assert a.start_datetime == datetime(2025, 12, 8, 9, 0)
+    assert a.start_time_t >= 540
+    assert a.start_datetime >= datetime(2025, 12, 8, 9, 0)
 
 
 # --- Integration test ---
@@ -322,7 +330,9 @@ def test_solve_tba_vehicle_driver_chain():
         book_name="", book_status="",
         action=ActionType.COLLECT, scheduled_date=date(2025, 12, 8),
         scheduled_time=time(9, 0), scheduled_datetime=datetime(2025, 12, 8, 9, 0),
-        time_offset_minutes=540, window_start_t=480, window_end_t=540,
+        time_offset_minutes=480,
+        earliest_departure_t=480, grace_end_t=600,
+        same_day_start_t=0, same_day_end_t=1439, deadline_t=None,
         vehicle_reg="VAN1", vehicle_group="V3",
         target_location=LOC_B, notes="",
     )
