@@ -118,6 +118,8 @@ def export_json(
                 "job_id": leg.job_id,
                 "vehicle_reg": leg.vehicle_reg,
             }
+            if leg.depot_name:
+                leg_dict["depot_name"] = leg.depot_name
             if leg.via_depot_postcode:
                 leg_dict["via_depot"] = {
                     "postcode": leg.via_depot_postcode,
@@ -143,6 +145,7 @@ def export_json(
         "solve_time_seconds": result.solve_time_seconds,
         "horizon_start": instance.horizon.start_date.isoformat(),
         "jobs": job_info,
+        "unassigned_job_ids": result.unassigned_job_ids,
         "driver_routes": routes_out,
     }
 
