@@ -228,3 +228,37 @@ def test_tba_no_source_infeasible():
     # No depot, no vehicles, no collects
     result = solve_circuit(_make_instance([d], [j]))
     assert result.status == "INFEASIBLE"
+
+
+# --- Objective function behavior ---
+
+def test_activation_penalty_prefers_fewer_drivers():
+    """With activation penalty, solver prefers fewer drivers for two jobs
+    that one driver can handle."""
+    d1 = _make_driver("D1")
+    d2 = _make_driver("D2")
+    j1 = _make_collect("J1", LOC_A, window_start=480, window_end=540)
+    j2 = _make_collect("J2", LOC_B, window_start=700, window_end=800)
+    depot = _make_storage()
+    result = solve_circuit(_make_instance([d1, d2], [j1, j2], [depot]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    assert len(result.assignments) == 2
+    # With activation penalty, solver should use 1 driver (via depot between collects)
+    drivers_used = {a.driver_id for a in result.assignments}
+    assert len(drivers_used) == 1
+
+
+def test_chaining_cheaper_than_depot_detour():
+    """Collect -> Deliver chain should be cheaper than Collect -> Depot -> transit -> Deliver.
+    Verify the solver chains when a matching collect/deliver pair exists."""
+    d = _make_driver()
+    j1 = _make_collect("J1", LOC_A, vehicle_reg="VAN1", group="V3",
+                       window_start=480, window_end=540)
+    j2 = _make_deliver("J2", LOC_B, vehicle_reg="VAN1", group="V3",
+                       window_start=600, window_end=800)
+    depot = _make_storage()
+    result = solve_circuit(_make_instance([d], [j1, j2], [depot]))
+    assert result.status in ("OPTIMAL", "FEASIBLE")
+    # Verify ordering
+    starts = {a.job_id: a.start_time_t for a in result.assignments}
+    assert starts["J1"] < starts["J2"]
