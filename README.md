@@ -202,22 +202,56 @@ pytest
 
 ---
 
-## Known Limitations & To Do
+## MVP Roadmap
 
-### Travel time accuracy (high priority)
+Four epics remain before the solver can replace the daily spreadsheet for a human dispatcher. They have the following dependency order:
 
-Transit and driving times are currently estimated using straight-line (Haversine) distance with fixed speed assumptions (30 km/h driving, 20 km/h transit with a 15% buffer). This is a placeholder. Real travel times — especially for public transit across the UK — can differ significantly.
+```
+Epic 1 (solver consolidation) → unblocks Epics 2, 3, 4
+Epic 2 (real travel times)    → independent, can run in parallel
+Epic 3 (TBA vehicles)         → depends on Epic 1
+Epic 4 (rolling horizon)      → depends on Epics 1, 3, and 5 (capacity)
+Epic 5 (depot capacity)       → depends on Epic 1; feeds into Epic 4
+```
 
-**Needed:** Replace `geo.py`'s `estimate_transit_pair` with a Google Maps API lookup (Distance Matrix API, transit mode). Times should be pre-computed and cached in a lookup table (keyed by postcode pair) so the solver doesn't make live API calls. The caching layer and cache-population script need to be built.
+### Epic 1: Solver Consolidation (must-have)
 
-### Multi-day / rolling horizon
+`circuit_solver.py` is the canonical solver but `run_solver.py` still calls the older `solver.py`. This epic wires up the correct solver end-to-end and validates it against real reference data.
 
-The solver currently runs against a single day's bookings. The 4–5 day rolling horizon described in the spec — where Day 1 is frozen and vehicle positions carry forward into Days 2–5 — is not yet implemented. Vehicle states are treated as static (current position only, no forward propagation).
+- Remove or archive `solver.py`
+- Wire `circuit_solver.py` as the sole solver in `run_solver.py`
+- Smoke test against `sample_bookings_data.csv` with full driver and fleet data
 
-### TBA vehicle assignment
+### Epic 2: Real Travel Times (must-have)
 
-Deliver jobs with no `Reg No.` (TBA) are not yet handled. The solver needs to dynamically select the best available vehicle from the pool matching the required group, and apply `NoOverlap` constraints to prevent double-assignment.
+Transit and driving times are estimated using Haversine distance with fixed speed assumptions. This is a placeholder — real public transit times across the UK differ significantly.
 
-### Storage location capacity tracking
+- Build a postcode-pair cache (populated by a background script using Google Maps Distance Matrix API)
+- `geo.py` reads from cache; falls back gracefully on cache miss
+- The solver never makes live API calls during a run
 
-Depot capacity limits exist in `storage_locations.csv` but are not yet enforced in the solver. Cumulative/Reservoir constraints tracking vehicle arrivals minus departures at each depot need to be added.
+### Epic 3: TBA Vehicle Assignment (must-have)
+
+Deliver jobs with no `Reg No.` are not yet handled by the solver. The arc computation exists; the CP-SAT model needs the assignment variable and constraints.
+
+- Add `assigned_vehicle[job_id]` IntVar to the circuit solver
+- Apply `NoOverlap` constraints to prevent double-assignment of the same vehicle
+- Export assigned vehicle reg in schedule output and report
+
+### Epic 4: Multi-Day Rolling Horizon with Overnight (must-have)
+
+The solver runs against a single day. The spec calls for a 4–5 day continuous timeline where vehicle positions carry forward and drivers with `can_overnight = false` cannot span midnight.
+
+- Model time as a single continuous integer timeline (T=0 to ~T=7200 min)
+- Vehicle positions after Day 1 become starting nodes for Days 2+
+- Enforce `can_overnight`: drivers without it cannot hold assignments across midnight
+- Day 1 output is flagged as frozen for dispatch; Days 2–5 are rolling drafts
+- Per-driver 10h shift limit applies per calendar day, not per horizon
+
+### Epic 5: Storage Location Capacity Enforcement (should-have)
+
+Depot capacity limits are defined in `storage_locations.csv` but not enforced. Vehicle flow at depots is unconstrained.
+
+- Add Cumulative/Reservoir constraints tracking arrivals minus departures at each depot
+- Enforce per-depot capacity ceiling across the horizon
+- Surface depot utilization in the HTML report
