@@ -108,6 +108,33 @@ To be formally defined in the scoring stage, but the high-level targets are:
 ---
 
 
+## MVP Epics & Development Workflow
+
+The project is being built to an **Operational MVP** — the solver replaces the daily spreadsheet for a human dispatcher. Four epics remain (see README for full descriptions):
+
+| Epic | Topic | Priority |
+|------|-------|----------|
+| Epic 2 | Real Travel Times (Google Maps cache) | must-have |
+| Epic 3 | TBA Vehicle Assignment | must-have |
+| Epic 4 | Multi-Day Rolling Horizon + `can_overnight` | must-have |
+| Epic 5 | Storage Location Capacity Enforcement | should-have |
+
+Epic 1 (solver consolidation — retire `solver.py`, wire `circuit_solver.py`) is **complete** as of 2026-03-09.
+
+### Workflow for each epic
+
+Each epic follows this sequence before any code is written:
+
+1. **Brainstorm** (`superpowers:brainstorming` skill) — explore intent, constraints, approaches
+2. **Design doc** — saved to `docs/plans/YYYY-MM-DD-<topic>-design.md`, committed
+3. **Implementation plan** (`superpowers:writing-plans` skill) — saved to `docs/plans/YYYY-MM-DD-<topic>-implementation.md`, committed
+4. **Implementation** — TDD (`superpowers:test-driven-development` skill), one plan step at a time
+5. **Review** (`superpowers:requesting-code-review` skill) before merging
+
+Design and plan docs go through stakeholder review (via Gemini) before implementation begins.
+
+---
+
 **Bookings CSV parsing rules:**
 - Strip blank rows first (used as visual separators in the human spreadsheet, carry no meaning)
 - Each row is an independent job — do not infer links between adjacent rows

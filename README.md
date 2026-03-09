@@ -207,20 +207,11 @@ pytest
 Four epics remain before the solver can replace the daily spreadsheet for a human dispatcher. They have the following dependency order:
 
 ```
-Epic 1 (solver consolidation) → unblocks Epics 2, 3, 4
-Epic 2 (real travel times)    → independent, can run in parallel
-Epic 3 (TBA vehicles)         → depends on Epic 1
-Epic 4 (rolling horizon)      → depends on Epics 1, 3, and 5 (capacity)
-Epic 5 (depot capacity)       → depends on Epic 1; feeds into Epic 4
+Epic 2 (real travel times)  → independent
+Epic 3 (TBA vehicles)       → independent
+Epic 4 (rolling horizon)    → depends on Epics 3 and 5
+Epic 5 (depot capacity)     → independent; feeds into Epic 4
 ```
-
-### Epic 1: Solver Consolidation (must-have)
-
-`circuit_solver.py` is the canonical solver but `run_solver.py` still calls the older `solver.py`. This epic wires up the correct solver end-to-end and validates it against real reference data.
-
-- Remove or archive `solver.py`
-- Wire `circuit_solver.py` as the sole solver in `run_solver.py`
-- Smoke test against `sample_bookings_data.csv` with full driver and fleet data
 
 ### Epic 2: Real Travel Times (must-have)
 
